@@ -10,11 +10,11 @@ require('dotenv').config();
 const authRoutes      = require('./routes/auth.routes');
 const fighterRoutes   = require('./routes/fighter.routes');
 const challengeRoutes = require('./routes/challenge.routes');
+const zoneRoutes      = require('./routes/zone.routes');
 
 const app    = express();
-const server = http.createServer(app); // wrap express in http server for Socket.io
+const server = http.createServer(app);
 
-// ─── Socket.io setup ──────────────────────────────────────────────────────────
 const io = new Server(server, {
   cors: {
     origin: process.env.CLIENT_URL || 'http://localhost:3000',
@@ -22,29 +22,21 @@ const io = new Server(server, {
   },
 });
 
-// Attach io to app so controllers can access it via req.app.get('io')
 app.set('io', io);
 
 io.on('connection', (socket) => {
   console.log('Socket connected:', socket.id);
-
-  // Each fighter joins a room named after their fighter _id
-  // This lets us send targeted notifications
-  // Client calls: socket.emit('join', fighterId)
   socket.on('join', (fighterId) => {
     socket.join(fighterId);
     console.log(`Fighter ${fighterId} joined their room`);
   });
-
   socket.on('disconnect', () => {
     console.log('Socket disconnected:', socket.id);
   });
 });
 
-// ─── Connect to MongoDB ───────────────────────────────────────────────────────
 connectDB();
 
-// ─── Global Middleware ────────────────────────────────────────────────────────
 app.use(helmet());
 app.use(morgan('dev'));
 app.use(express.json());
@@ -53,22 +45,19 @@ app.use(cors({
   credentials: true,
 }));
 
-// ─── Routes ───────────────────────────────────────────────────────────────────
 app.use('/api/auth',      authRoutes);
 app.use('/api/fighter',   fighterRoutes);
 app.use('/api/challenge', challengeRoutes);
+app.use('/api/zone',      zoneRoutes);
 
-// ─── Health check ─────────────────────────────────────────────────────────────
 app.get('/api/health', (req, res) => {
   res.json({ status: 'ok', timestamp: new Date().toISOString() });
 });
 
-// ─── 404 handler ──────────────────────────────────────────────────────────────
 app.use((req, res) => {
   res.status(404).json({ error: 'Route not found' });
 });
 
-// ─── Global error handler ─────────────────────────────────────────────────────
 // eslint-disable-next-line no-unused-vars
 app.use((err, req, res, next) => {
   console.error(err.stack);
@@ -85,7 +74,6 @@ app.use((err, req, res, next) => {
   res.status(err.status || 500).json({ error: err.message || 'Something went wrong' });
 });
 
-// ─── Start server ─────────────────────────────────────────────────────────────
 const PORT = process.env.PORT || 5000;
 server.listen(PORT, () => {
   console.log(`Server running on port ${PORT}`);
