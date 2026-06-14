@@ -40,8 +40,22 @@ connectDB();
 app.use(helmet());
 app.use(morgan('dev'));
 app.use(express.json());
+const allowedOrigins = [
+  (process.env.CLIENT_URL || 'http://localhost:3000').replace(/\/$/, ''),
+  'http://localhost:3000',
+];
+
 app.use(cors({
-  origin: process.env.CLIENT_URL || 'http://localhost:3000',
+  origin: (origin, callback) => {
+    // Allow requests with no origin (mobile apps, curl, Postman)
+    if (!origin) return callback(null, true);
+    const clean = origin.replace(/\/$/, '');
+    if (allowedOrigins.includes(clean)) {
+      callback(null, true);
+    } else {
+      callback(new Error(`CORS blocked: ${origin}`));
+    }
+  },
   credentials: true,
 }));
 
