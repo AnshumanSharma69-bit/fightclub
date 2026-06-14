@@ -1,13 +1,12 @@
 'use client';
 
+import { Suspense } from 'react';
 import { useEffect } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useAuth } from '@/context/AuthContext';
 import api from '@/lib/api';
 
-// Google redirects to this page after OAuth with ?token=...
-// We store the token and fetch the user profile, then redirect to /map
-export default function AuthCallbackPage() {
+function CallbackHandler() {
   const router       = useRouter();
   const searchParams = useSearchParams();
   const { login }    = useAuth();
@@ -21,14 +20,11 @@ export default function AuthCallbackPage() {
       return;
     }
 
-    // Store token temporarily so api.js interceptor picks it up
     localStorage.setItem('token', token);
 
-    // Fetch user + fighter profile with the new token
     api.get('/auth/me')
       .then(res => {
         login(token, res.data.user, res.data.fighter);
-        // If fighter needs onboarding (new Google user with no real stats)
         if (!res.data.fighter || res.data.fighter.needsOnboarding) {
           router.push('/onboarding');
         } else {
@@ -56,5 +52,26 @@ export default function AuthCallbackPage() {
       <div style={{ fontSize: '32px' }}>🥊</div>
       <div style={{ fontSize: '14px', color: '#666' }}>Signing you in...</div>
     </div>
+  );
+}
+
+export default function AuthCallbackPage() {
+  return (
+    <Suspense fallback={
+      <div style={{
+        alignItems: 'center',
+        background: '#0a0a0a',
+        color: '#666',
+        display: 'flex',
+        height: '100vh',
+        justifyContent: 'center',
+        fontFamily: 'Inter, sans-serif',
+        fontSize: '14px',
+      }}>
+        🥊 Loading...
+      </div>
+    }>
+      <CallbackHandler />
+    </Suspense>
   );
 }
