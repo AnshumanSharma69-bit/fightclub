@@ -1,0 +1,73 @@
+@import 'leaflet/dist/leaflet.css';
+@import "tailwindcss";
+
+*, *::before, *::after {
+  box-sizing: border-box;
+}
+
+html, body {
+  height: 100%;
+  margin: 0;
+  padding: 0;
+  background: #0f0f0f;
+  color: #fff;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* Leaflet z-index fixes — keeps map controls below our modals */
+.leaflet-top,
+.leaflet-bottom {
+  z-index: 800 !important;
+}
+
+.leaflet-pane {
+  z-index: 400 !important;
+}
+
+/* Remove default button/input outlines and add ours */
+button:focus-visible,
+input:focus-visible,
+textarea:focus-visible {
+  outline: 2px solid #e63946;
+  outline-offset: 2px;
+}
+
+/* Mobile tap highlight */
+* {
+  -webkit-tap-highlight-color: transparent;
+}
+
+/* Scrollbar — dark theme */
+::-webkit-scrollbar {
+  width: 6px;
+}
+::-webkit-scrollbar-track {
+  background: #111;
+}
+::-webkit-scrollbar-thumb {
+  background: #333;
+  border-radius: 3px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: #444;
+}
+
+/* Responsive typography helpers */
+@media (max-width: 768px) {
+  input, textarea, select {
+    font-size: 16px !important; /* prevents iOS zoom on focus */
+  }
+}
+
+/* ── Page-level responsive helpers ── */
+
+/* Leaderboard / profile stats grid: 4 cols on desktop, 2 on mobile */
+@media (max-width: 480px) {
+  .stats-grid-4 {
+    grid-template-columns: repeat(2, 1fr) !important;
+  }
+  .badge-grid {
+    grid-template-columns: repeat(2, 1fr) !important;
+  }
+}
