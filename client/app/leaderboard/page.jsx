@@ -1,63 +1,47 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import api from '@/lib/api';
 
 export default function LeaderboardPage() {
-  const router = useRouter();
   const [leaders, setLeaders] = useState([]);
   const [zones,   setZones]   = useState([]);
-  const [tab,     setTab]     = useState('badges'); // 'badges' | 'zones'
+  const [tab,     setTab]     = useState('badges');
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    const fetchData = async () => {
-      try {
-        const [lRes, zRes] = await Promise.all([
-          api.get('/zone/leaderboard'),
-          api.get('/zone/all'),
-        ]);
-        setLeaders(lRes.data);
-        setZones(zRes.data);
-      } catch (err) {
-        console.error(err);
-      } finally {
-        setLoading(false);
-      }
-    };
-    fetchData();
+    Promise.all([api.get('/zone/leaderboard'), api.get('/zone/all')])
+      .then(([l, z]) => { setLeaders(l.data); setZones(z.data); })
+      .catch(console.error)
+      .finally(() => setLoading(false));
   }, []);
 
   return (
     <div style={s.root}>
-      {/* Navbar */}
       <div style={s.navbar}>
-        <Link href="/map" style={s.back}>← Map</Link>
-        <span style={s.logo}>🏆 Leaderboard</span>
+        <Link href="/map" style={s.back}>← MAP</Link>
+        <div style={s.logo}>FIGHT<span style={s.accent}>CLUB</span></div>
         <div style={{ width: 60 }} />
       </div>
 
-      {/* Tabs */}
+      <div style={s.pageHeader}>
+        <div style={s.pageTitle}>LEADERBOARD</div>
+        <div style={s.pageSub}>Territory holders &amp; top fighters</div>
+      </div>
+
       <div style={s.tabs}>
-        <button
-          style={{ ...s.tab, ...(tab === 'badges' ? s.tabActive : {}) }}
-          onClick={() => setTab('badges')}
-        >
-          🏅 Badge Holders
+        <button style={{ ...s.tab, ...(tab === 'badges' ? s.tabActive : {}) }} onClick={() => setTab('badges')}>
+          BADGE HOLDERS
         </button>
-        <button
-          style={{ ...s.tab, ...(tab === 'zones' ? s.tabActive : {}) }}
-          onClick={() => setTab('zones')}
-        >
-          🗺️ All Zones
+        <button style={{ ...s.tab, ...(tab === 'zones' ? s.tabActive : {}) }} onClick={() => setTab('zones')}>
+          ALL ZONES
         </button>
       </div>
 
       <div style={s.content}>
         {loading ? (
-          <div style={s.loading}>Loading...</div>
+          <div style={s.loading}>LOADING...</div>
         ) : tab === 'badges' ? (
           <BadgeLeaderboard leaders={leaders} />
         ) : (
@@ -72,11 +56,9 @@ function BadgeLeaderboard({ leaders }) {
   if (leaders.length === 0) {
     return (
       <div style={s.empty}>
-        <div style={{ fontSize: '40px', marginBottom: '12px' }}>🥊</div>
-        <div style={{ color: '#888', fontSize: '15px' }}>No badge holders yet</div>
-        <div style={{ color: '#555', fontSize: '13px', marginTop: '6px' }}>
-          Win fights in a city to claim its badge
-        </div>
+        <div style={s.emptyIcon}>🏅</div>
+        <div style={s.emptyTitle}>NO BADGE HOLDERS YET</div>
+        <div style={s.emptyHint}>Win fights in a city zone to claim the badge</div>
       </div>
     );
   }
@@ -84,26 +66,29 @@ function BadgeLeaderboard({ leaders }) {
   return (
     <div style={s.list}>
       {leaders.map((fighter, i) => (
-        <div key={fighter._id} style={s.leaderCard}>
-          <div style={s.rank}>
-            {i === 0 ? '🥇' : i === 1 ? '🥈' : i === 2 ? '🥉' : `#${i + 1}`}
+        <Link key={fighter._id} href={`/fighter/${fighter._id}`} style={s.leaderCard}>
+          <div style={{
+            ...s.rank,
+            color: i === 0 ? '#f59e0b' : i === 1 ? '#9ca3af' : i === 2 ? '#b45309' : '#3a3a3a',
+            borderColor: i === 0 ? '#f59e0b' : i === 1 ? '#9ca3af' : i === 2 ? '#b45309' : '#1c1c1c',
+          }}>
+            {i < 3 ? ['①','②','③'][i] : `#${i + 1}`}
           </div>
           <div style={s.leaderAvatar}>{fighter.username?.[0]?.toUpperCase()}</div>
           <div style={s.leaderInfo}>
             <div style={s.leaderName}>{fighter.username}</div>
-            <div style={s.leaderMeta}>
-              ELO {fighter.eloRating} · {fighter.wins}W {fighter.losses}L
-            </div>
+            <div style={s.leaderMeta}>ELO {fighter.eloRating} · {fighter.wins}W {fighter.losses}L</div>
             <div style={s.badgeRow}>
               {fighter.badges.map(b => (
-                <span key={b.name} style={s.badgePill}>
-                  {b.emoji} {b.name}
-                </span>
+                <span key={b.name} style={s.badgePill}>{b.emoji} {b.name}</span>
               ))}
             </div>
           </div>
-          <div style={s.badgeCount}>{fighter.badgeCount} 🏅</div>
-        </div>
+          <div style={s.badgeCount}>
+            <div style={s.badgeCountNum}>{fighter.badgeCount}</div>
+            <div style={s.badgeCountLabel}>BADGES</div>
+          </div>
+        </Link>
       ))}
     </div>
   );
@@ -114,23 +99,23 @@ function ZoneList({ zones }) {
     <div style={s.list}>
       {zones.map(zone => (
         <div key={zone._id} style={{ ...s.zoneCard, borderLeft: `3px solid ${zone.color}` }}>
-          <div style={{ fontSize: '24px' }}>{zone.badgeEmoji}</div>
+          <div style={s.zoneEmoji}>{zone.badgeEmoji}</div>
           <div style={s.zoneInfo}>
             <div style={s.zoneName}>{zone.name}</div>
-            <div style={s.zoneMeta}>{zone.state}</div>
+            <div style={s.zoneState}>{zone.state}</div>
           </div>
-          <div style={s.zoneHolder}>
+          <div style={s.zoneRight}>
             {zone.holder ? (
               <>
-                <div style={{ color: zone.color, fontSize: '12px', fontWeight: '600' }}>
+                <div style={{ color: zone.color, fontSize: '11px', fontWeight: '700', letterSpacing: '0.06em' }}>
                   👑 {zone.holder.username}
                 </div>
-                <div style={{ color: '#555', fontSize: '11px' }}>
+                <div style={{ color: '#3a3a3a', fontSize: '10px', marginTop: '2px', letterSpacing: '0.06em' }}>
                   ELO {zone.holder.eloRating}
                 </div>
               </>
             ) : (
-              <div style={{ color: '#444', fontSize: '12px' }}>Unclaimed</div>
+              <div style={{ color: '#3a3a3a', fontSize: '10px', fontWeight: '700', letterSpacing: '0.1em' }}>UNCLAIMED</div>
             )}
           </div>
           {zone.captureCount > 0 && (
@@ -143,30 +128,40 @@ function ZoneList({ zones }) {
 }
 
 const s = {
-  root:    { background: '#0f0f0f', minHeight: '100vh', display: 'flex', flexDirection: 'column' },
-  navbar:  { alignItems: 'center', background: '#111', borderBottom: '1px solid #222', display: 'flex', height: '52px', justifyContent: 'space-between', padding: '0 16px', flexShrink: 0 },
-  back:    { color: '#888', fontSize: '13px', textDecoration: 'none' },
-  logo:    { color: '#fff', fontSize: '17px', fontWeight: '600' },
-  tabs:    { display: 'flex', borderBottom: '1px solid #222', padding: '0 16px' },
-  tab:     { background: 'transparent', border: 'none', borderBottom: '2px solid transparent', color: '#666', cursor: 'pointer', fontSize: '13px', fontWeight: '500', padding: '12px 16px', marginBottom: '-1px' },
-  tabActive: { color: '#fff', borderBottom: '2px solid #e63946' },
-  content: { flex: 1, overflow: 'auto', padding: '16px' },
-  loading: { color: '#666', fontSize: '14px', textAlign: 'center', padding: '40px' },
-  empty:   { textAlign: 'center', padding: '60px 20px' },
-  list:    { display: 'flex', flexDirection: 'column', gap: '10px', maxWidth: '600px', margin: '0 auto' },
-  leaderCard: { background: '#161616', border: '1px solid #222', borderRadius: '12px', display: 'flex', alignItems: 'center', gap: '12px', padding: '14px 16px' },
-  rank:    { color: '#888', fontSize: '18px', width: '32px', textAlign: 'center', flexShrink: 0 },
-  leaderAvatar: { width: '40px', height: '40px', borderRadius: '50%', background: '#e63946', color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '16px', fontWeight: '700', flexShrink: 0 },
-  leaderInfo: { flex: 1 },
-  leaderName: { color: '#fff', fontSize: '14px', fontWeight: '600' },
-  leaderMeta: { color: '#666', fontSize: '12px', marginTop: '2px' },
+  root:     { background: '#0a0a0a', minHeight: '100vh', display: 'flex', flexDirection: 'column', fontFamily: "'Inter', sans-serif" },
+  navbar:   { alignItems: 'center', background: '#0d0d0d', borderBottom: '1px solid #1c1c1c', display: 'flex', height: '48px', justifyContent: 'space-between', padding: '0 16px', flexShrink: 0 },
+  back:     { color: '#4a4a4a', fontSize: '10px', fontWeight: '700', letterSpacing: '0.15em', textDecoration: 'none' },
+  logo:     { color: '#e8e4dc', fontFamily: "'Bebas Neue', 'Arial Black', sans-serif", fontSize: '22px', letterSpacing: '0.06em' },
+  accent:   { color: '#cc2200' },
+  pageHeader: { padding: '32px 24px 0', borderBottom: '1px solid #1c1c1c', paddingBottom: '20px' },
+  pageTitle:  { color: '#e8e4dc', fontFamily: "'Bebas Neue', sans-serif", fontSize: '40px', letterSpacing: '0.06em', lineHeight: 1 },
+  pageSub:    { color: '#4a4a4a', fontSize: '11px', fontWeight: '600', letterSpacing: '0.1em', marginTop: '4px' },
+  tabs:     { display: 'flex', borderBottom: '1px solid #1c1c1c', padding: '0 24px' },
+  tab:      { background: 'transparent', border: 'none', borderBottom: '2px solid transparent', color: '#3a3a3a', cursor: 'pointer', fontFamily: "'Bebas Neue', sans-serif", fontSize: '14px', letterSpacing: '0.1em', padding: '12px 16px', marginBottom: '-1px' },
+  tabActive:{ color: '#e8e4dc', borderBottomColor: '#cc2200' },
+  content:  { flex: 1, overflow: 'auto', padding: '20px 24px 48px' },
+  loading:  { color: '#3a3a3a', fontFamily: "'Bebas Neue', sans-serif", fontSize: '16px', letterSpacing: '0.15em', padding: '48px', textAlign: 'center' },
+  empty:    { textAlign: 'center', padding: '60px 20px', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '8px' },
+  emptyIcon:  { fontSize: '40px', marginBottom: '4px' },
+  emptyTitle: { color: '#3a3a3a', fontFamily: "'Bebas Neue', sans-serif", fontSize: '20px', letterSpacing: '0.1em' },
+  emptyHint:  { color: '#2a2a2a', fontSize: '12px', letterSpacing: '0.04em' },
+  list:     { display: 'flex', flexDirection: 'column', gap: '8px', maxWidth: '600px', margin: '0 auto' },
+  leaderCard: { background: '#0d0d0d', border: '1px solid #1c1c1c', borderRadius: '2px', display: 'flex', alignItems: 'center', gap: '12px', padding: '14px 16px', textDecoration: 'none', transition: 'border-color 0.15s' },
+  rank:     { border: '1px solid', borderRadius: '2px', color: '#3a3a3a', fontFamily: "'Bebas Neue', sans-serif", fontSize: '18px', height: '32px', letterSpacing: '0.04em', display: 'flex', alignItems: 'center', justifyContent: 'center', width: '32px', flexShrink: 0 },
+  leaderAvatar: { width: '40px', height: '40px', borderRadius: '2px', background: '#cc2200', color: '#e8e4dc', display: 'flex', alignItems: 'center', justifyContent: 'center', fontFamily: "'Bebas Neue', sans-serif", fontSize: '18px', flexShrink: 0 },
+  leaderInfo: { flex: 1, minWidth: 0 },
+  leaderName: { color: '#e8e4dc', fontFamily: "'Bebas Neue', sans-serif", fontSize: '16px', letterSpacing: '0.06em' },
+  leaderMeta: { color: '#4a4a4a', fontSize: '10px', fontWeight: '600', letterSpacing: '0.08em', marginTop: '2px' },
   badgeRow:   { display: 'flex', flexWrap: 'wrap', gap: '4px', marginTop: '6px' },
-  badgePill:  { background: '#1a1a1a', border: '1px solid #333', borderRadius: '99px', color: '#ccc', fontSize: '11px', padding: '2px 8px' },
-  badgeCount: { color: '#f59e0b', fontSize: '18px', fontWeight: '700', flexShrink: 0 },
-  zoneCard:   { background: '#161616', border: '1px solid #222', borderRadius: '10px', display: 'flex', alignItems: 'center', gap: '12px', padding: '12px 14px' },
+  badgePill:  { background: '#1a1000', border: '1px solid #3a2800', borderRadius: '2px', color: '#f59e0b', fontSize: '10px', fontWeight: '600', padding: '2px 6px' },
+  badgeCount: { textAlign: 'right', flexShrink: 0 },
+  badgeCountNum: { color: '#cc2200', fontFamily: "'Bebas Neue', sans-serif", fontSize: '28px', letterSpacing: '0.04em', lineHeight: 1 },
+  badgeCountLabel: { color: '#4a4a4a', fontSize: '8px', fontWeight: '700', letterSpacing: '0.15em', marginTop: '2px' },
+  zoneCard: { background: '#0d0d0d', border: '1px solid #1c1c1c', borderRadius: '2px', display: 'flex', alignItems: 'center', gap: '12px', padding: '12px 14px' },
+  zoneEmoji:  { fontSize: '22px', flexShrink: 0 },
   zoneInfo:   { flex: 1 },
-  zoneName:   { color: '#fff', fontSize: '14px', fontWeight: '600' },
-  zoneMeta:   { color: '#555', fontSize: '12px', marginTop: '2px' },
-  zoneHolder: { textAlign: 'right' },
-  captureCount: { color: '#555', fontSize: '12px', flexShrink: 0 },
+  zoneName:   { color: '#e8e4dc', fontFamily: "'Bebas Neue', sans-serif", fontSize: '15px', letterSpacing: '0.06em' },
+  zoneState:  { color: '#3a3a3a', fontSize: '10px', fontWeight: '600', letterSpacing: '0.08em', marginTop: '2px' },
+  zoneRight:  { textAlign: 'right' },
+  captureCount: { color: '#3a3a3a', fontSize: '11px', flexShrink: 0 },
 };
