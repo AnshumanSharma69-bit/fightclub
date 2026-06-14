@@ -4,6 +4,7 @@ const helmet     = require('helmet');
 const morgan     = require('morgan');
 const http       = require('http');
 const { Server } = require('socket.io');
+const passport   = require('./config/passport');
 const connectDB  = require('./config/db');
 require('dotenv').config();
 
@@ -40,6 +41,7 @@ connectDB();
 app.use(helmet());
 app.use(morgan('dev'));
 app.use(express.json());
+app.use(passport.initialize());
 const allowedOrigins = [
   (process.env.CLIENT_URL || 'http://localhost:3000').replace(/\/$/, ''),
   'http://localhost:3000',
