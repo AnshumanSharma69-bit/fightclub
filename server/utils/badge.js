@@ -1,19 +1,41 @@
 const Zone    = require('../models/Zone');
 const Fighter = require('../models/Fighter');
+const { reverseGeocode }    = require('./geocode');
+const { createCirclePolygon } = require('./geo');
+
+// New auto-created zones get a 10km-radius circle around the winner's location
+const ZONE_RADIUS_KM = 10;
+
+// Visual style cycled through for newly-discovered zones
+const ZONE_PALETTE = [
+  { color: '#e63946', emoji: '🔴' },
+  { color: '#3b82f6', emoji: '🔵' },
+  { color: '#f59e0b', emoji: '🟡' },
+  { color: '#8b5cf6', emoji: '🟣' },
+  { color: '#10b981', emoji: '🟢' },
+  { color: '#f97316', emoji: '🟠' },
+  { color: '#ec4899', emoji: '🩷' },
+  { color: '#06b6d4', emoji: '🩵' },
+  { color: '#a855f7', emoji: '💜' },
+  { color: '#eab308', emoji: '🟨' },
+];
+
+function randomZoneStyle() {
+  return ZONE_PALETTE[Math.floor(Math.random() * ZONE_PALETTE.length)];
+}
 
 // ─── checkAndAwardBadge ───────────────────────────────────────────────────────
 // Called after a fight result is confirmed.
-// winnerId: Fighter _id of the winner (string)
-// winnerLocation: { coordinates: [lon, lat] } — winner's saved location
 //
-// Logic:
-// 1. Find which zone the winner is in (using their location)
-// 2. If zone is unclaimed → winner claims it automatically
-// 3. If zone holder is the loser → winner takes the badge
-// 4. Otherwise → no badge change
+// 1. Find which zone the winner's saved location falls inside.
+// 2. If NO zone covers that spot, reverse-geocode it to find the
+//    city/town/village name and create a brand-new zone (a 10km circle)
+//    centered on the winner — this is how new "gyms" appear on the map.
+// 3. Unclaimed zone → winner claims it.
+//    Loser was the holder → winner captures it from them.
+//    Otherwise → no change.
 //
-// Returns: { badgeAwarded: bool, zone: Zone | null }
-
+// Returns: { badgeAwarded: bool, zone: Zone | null, reason?: 'claimed'|'captured' }
 async function checkAndAwardBadge(winnerId, loserId) {
   try {
     const winner = await Fighter.findById(winnerId);
@@ -22,42 +44,74 @@ async function checkAndAwardBadge(winnerId, loserId) {
     const [lon, lat] = winner.location.coordinates;
     if (lon === 0 && lat === 0) return { badgeAwarded: false, zone: null };
 
-    // Find the zone that contains the winner's location
-    // $geoIntersects: returns the zone whose polygon contains this point
-    const zone = await Zone.findOne({
+    // 1. Does an existing zone already cover this location?
+    let zone = await Zone.findOne({
       boundary: {
         $geoIntersects: {
-          $geometry: {
-            type: 'Point',
-            coordinates: [lon, lat],
-          },
+          $geometry: { type: 'Point', coordinates: [lon, lat] },
         },
       },
     });
 
+    // 2. No zone here yet — discover this place and create one
+    if (!zone) {
+      const place = await reverseGeocode(lat, lon);
+      const placeName = place?.name;
+
+      // Couldn't determine a place name (geocoding failed/offline) —
+      // skip badge logic for this fight rather than crashing it
+      if (!placeName) return { badgeAwarded: false, zone: null };
+
+      // Reuse a zone with this name if it already exists (e.g. someone
+      // else in the same town created it from a slightly different spot)
+      zone = await Zone.findOne({ name: placeName });
+
+      if (!zone) {
+        const style = randomZoneStyle();
+        try {
+          zone = await Zone.create({
+            name:       placeName,
+            city:       placeName,
+            state:      place.state || '',
+            color:      style.color,
+            badgeEmoji: style.emoji,
+            boundary: {
+              type: 'Polygon',
+              coordinates: [createCirclePolygon(lon, lat, ZONE_RADIUS_KM)],
+            },
+          });
+        } catch (err) {
+          // Race condition: another request created the same-named zone
+          // a moment ago — just use that one
+          if (err.code === 11000) {
+            zone = await Zone.findOne({ name: placeName });
+          } else {
+            throw err;
+          }
+        }
+      }
+    }
+
     if (!zone) return { badgeAwarded: false, zone: null };
 
     const currentHolderId = zone.currentHolderId?.toString();
-    const winnerIdStr     = winnerId.toString();
     const loserIdStr      = loserId.toString();
 
-    // Case 1: Zone is unclaimed — winner claims it
+    // Unclaimed — winner claims it (this covers brand-new zones too,
+    // since currentHolderId is null on creation)
     if (!currentHolderId) {
       await claimZone(zone, winner);
       return { badgeAwarded: true, zone, reason: 'claimed' };
     }
 
-    // Case 2: Loser was the holder — winner takes the badge
+    // Loser was the holder — winner captures it
     if (currentHolderId === loserIdStr) {
       await claimZone(zone, winner);
-      // Remove badge from loser
-      await Fighter.findByIdAndUpdate(loserId, {
-        $pull: { badgesEarned: zone._id },
-      });
+      await Fighter.findByIdAndUpdate(loserId, { $pull: { badgesEarned: zone._id } });
       return { badgeAwarded: true, zone, reason: 'captured' };
     }
 
-    // Case 3: Neither — no badge change (fight didn't involve the holder)
+    // Neither — no badge change
     return { badgeAwarded: false, zone };
   } catch (err) {
     console.error('Badge check error:', err);
@@ -68,10 +122,9 @@ async function checkAndAwardBadge(winnerId, loserId) {
 async function claimZone(zone, winner) {
   zone.currentHolderId = winner._id;
   zone.capturedAt      = new Date();
-  zone.captureCount    += 1;
+  zone.captureCount   += 1;
   await zone.save();
 
-  // Add badge to winner's profile if not already there
   await Fighter.findByIdAndUpdate(winner._id, {
     $addToSet: { badgesEarned: zone._id },
   });

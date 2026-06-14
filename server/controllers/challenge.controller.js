@@ -125,7 +125,12 @@ const declineChallenge = async (req, res, next) => {
 };
 
 // ─── POST /api/challenge/:id/confirm ─────────────────────────────────────────
-// Body: { winnerId } — fighter _id of the winner as a string
+// Body: { winnerId } — fighter _id of who YOU think won, as a string
+//
+// Important: the response message is written from the perspective of the
+// fighter who is CALLING this endpoint right now — they might be the winner
+// OR the loser of the fight. "You captured the badge" would be wrong and
+// confusing if shown to the loser, so we branch on that explicitly.
 const confirmResult = async (req, res, next) => {
   try {
     const { winnerId } = req.body;
@@ -141,115 +146,139 @@ const confirmResult = async (req, res, next) => {
       return res.status(400).json({ error: 'Challenge must be accepted before confirming result' });
     }
 
-    const myId          = fighter._id.toString();
-    const challengerId  = challenge.challengerId.toString();
-    const defenderId    = challenge.defenderId.toString();
-    const isChallenger  = myId === challengerId;
-    const isDefender    = myId === defenderId;
+    const myId         = fighter._id.toString();
+    const challengerId = challenge.challengerId.toString();
+    const defenderId   = challenge.defenderId.toString();
+    const isChallenger = myId === challengerId;
+    const isDefender   = myId === defenderId;
 
     if (!isChallenger && !isDefender) {
       return res.status(403).json({ error: 'You are not part of this challenge' });
     }
 
-    // Store each fighter's reported winner separately
-    // challengerReportedWinner / defenderReportedWinner
+    // Record this fighter's own report of who won
     if (isChallenger) {
       if (challenge.challengerConfirmed) {
         return res.status(400).json({ error: 'You already confirmed this result' });
       }
-      challenge.challengerConfirmed = true;
+      challenge.challengerConfirmed      = true;
       challenge.challengerReportedWinner = winnerId;
     } else {
       if (challenge.defenderConfirmed) {
         return res.status(400).json({ error: 'You already confirmed this result' });
       }
-      challenge.defenderConfirmed = true;
+      challenge.defenderConfirmed      = true;
       challenge.defenderReportedWinner = winnerId;
     }
 
-    // Both have confirmed — now check if they agree
-    if (challenge.challengerConfirmed && challenge.defenderConfirmed) {
-      challenge.status = 'completed';
+    const io = req.app.get('io');
 
-      const cWinner = challenge.challengerReportedWinner?.toString();
-      const dWinner = challenge.defenderReportedWinner?.toString();
+    // ── Only one side has confirmed so far ──────────────────────────────────
+    if (!(challenge.challengerConfirmed && challenge.defenderConfirmed)) {
+      await challenge.save();
 
-      if (cWinner !== dWinner) {
-        // Disagreement
-        challenge.disputed = true;
-        await challenge.save();
-        return res.json({
-          message: '⚠️ Disputed result — both fighters reported different winners. An admin will review.',
-          disputed: true,
-        });
+      // Let the other fighter's UI update in real time (no manual refresh needed)
+      const otherFighterId = isChallenger ? defenderId : challengerId;
+      if (io) {
+        io.to(otherFighterId).emit('challenge:updated', { challengeId: challenge._id });
       }
 
-      // Agreement — update ELO
-      const agreedWinnerId = cWinner;
-      const agreedLoserId  = agreedWinnerId === challengerId ? defenderId : challengerId;
+      return res.json({ message: '⏳ Your result recorded — waiting for opponent to confirm.' });
+    }
 
-      const winner = await Fighter.findById(agreedWinnerId);
-      const loser  = await Fighter.findById(agreedLoserId);
+    // ── Both sides confirmed — check agreement ──────────────────────────────
+    challenge.status = 'completed';
+    const cWinner = challenge.challengerReportedWinner?.toString();
+    const dWinner = challenge.defenderReportedWinner?.toString();
 
-      if (winner && loser) {
-        const { winnerNewRating, loserNewRating } = calculateNewRatings(
-          winner.eloRating,
-          loser.eloRating
-        );
+    if (cWinner !== dWinner) {
+      challenge.disputed = true;
+      await challenge.save();
 
-        winner.eloRating = winnerNewRating;
-        winner.wins      += 1;
-        loser.eloRating  = loserNewRating;
-        loser.losses     += 1;
-        challenge.winnerId = agreedWinnerId;
+      if (io) {
+        io.to(challengerId).emit('challenge:completed', { challengeId: challenge._id, disputed: true });
+        io.to(defenderId).emit('challenge:completed',  { challengeId: challenge._id, disputed: true });
+      }
 
-        await winner.save();
-        await loser.save();
-        await challenge.save();
+      return res.json({
+        message: '⚠️ Disputed result — both fighters reported different winners. An admin will review.',
+        disputed: true,
+      });
+    }
 
-        // Check if winner earns or captures a territory badge
-        const { badgeAwarded, zone, reason } = await checkAndAwardBadge(
-          agreedWinnerId,
-          agreedLoserId
-        );
+    // ── Agreement — update ELO and check badges ─────────────────────────────
+    const agreedWinnerId = cWinner;
+    const agreedLoserId  = agreedWinnerId === challengerId ? defenderId : challengerId;
 
-        // Notify both fighters of ELO change via socket
-        const io = req.app.get('io');
-        if (io) {
-          io.to(agreedWinnerId).emit('elo:updated', {
-            newRating:    winnerNewRating,
-            result:       'win',
-            badgeAwarded,
-            badgeName:    zone?.name || null,
-            badgeEmoji:   zone?.badgeEmoji || null,
-            badgeReason:  reason || null,
-          });
-          io.to(agreedLoserId).emit('elo:updated', {
-            newRating:  loserNewRating,
-            result:     'loss',
-            badgeLost:  badgeAwarded && reason === 'captured',
-            badgeName:  zone?.name || null,
-          });
-        }
+    const winner = await Fighter.findById(agreedWinnerId);
+    const loser  = await Fighter.findById(agreedLoserId);
 
-        let message = '✅ Result confirmed — ELO updated!';
-        if (badgeAwarded && reason === 'claimed') message += ` 🏅 You claimed the ${zone.name} badge!`;
-        if (badgeAwarded && reason === 'captured') message += ` 🏆 You captured the ${zone.name} badge!`;
+    if (!winner || !loser) {
+      await challenge.save();
+      return res.json({ message: '✅ Result confirmed — ELO updated!', disputed: false });
+    }
 
-        return res.json({
-          message,
-          winnerNewRating,
-          loserNewRating,
-          badgeAwarded,
-          badgeName:  zone?.name  || null,
-          badgeEmoji: zone?.badgeEmoji || null,
-          disputed:   false,
-        });
+    const { winnerNewRating, loserNewRating } = calculateNewRatings(winner.eloRating, loser.eloRating);
+
+    winner.eloRating   = winnerNewRating;
+    winner.wins       += 1;
+    loser.eloRating    = loserNewRating;
+    loser.losses      += 1;
+    challenge.winnerId = agreedWinnerId;
+
+    await winner.save();
+    await loser.save();
+    await challenge.save();
+
+    const { badgeAwarded, zone, reason } = await checkAndAwardBadge(agreedWinnerId, agreedLoserId);
+
+    // Message is from the CALLER's perspective — they may be winner or loser
+    const callerIsWinner = myId === agreedWinnerId;
+    const myNewRating    = callerIsWinner ? winnerNewRating : loserNewRating;
+
+    let message = callerIsWinner
+      ? `✅ Result confirmed — you won! New ELO: ${myNewRating}`
+      : `✅ Result confirmed — ELO updated. New ELO: ${myNewRating}`;
+
+    if (badgeAwarded) {
+      if (callerIsWinner) {
+        message += reason === 'claimed'
+          ? ` 🏅 You claimed the ${zone.name} badge!`
+          : ` 🏆 You captured the ${zone.name} badge!`;
+      } else if (reason === 'captured') {
+        message += ` 💔 Your opponent captured the ${zone.name} badge from you.`;
       }
     }
 
-    await challenge.save();
-    res.json({ message: '⏳ Your result recorded — waiting for opponent to confirm.' });
+    if (io) {
+      io.to(agreedWinnerId).emit('challenge:completed', {
+        challengeId: challenge._id,
+        disputed:    false,
+        youWon:      true,
+        newRating:   winnerNewRating,
+        badgeAwarded,
+        badgeReason: reason || null,
+        badgeName:   zone?.name || null,
+      });
+      io.to(agreedLoserId).emit('challenge:completed', {
+        challengeId: challenge._id,
+        disputed:    false,
+        youWon:      false,
+        newRating:   loserNewRating,
+        badgeLost:   badgeAwarded && reason === 'captured',
+        badgeName:   zone?.name || null,
+      });
+    }
+
+    res.json({
+      message,
+      winnerNewRating,
+      loserNewRating,
+      badgeAwarded,
+      badgeName:  zone?.name  || null,
+      badgeEmoji: zone?.badgeEmoji || null,
+      disputed:   false,
+    });
   } catch (err) {
     next(err);
   }

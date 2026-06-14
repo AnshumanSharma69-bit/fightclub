@@ -12,8 +12,6 @@ const getMyProfile = async (req, res, next) => {
 };
 
 // ─── GET /api/fighter/nearby ──────────────────────────────────────────────────
-// Query params: lon, lat, radius (meters, default 50km)
-// If no coords provided, returns all fighters who are available
 const getNearbyFighters = async (req, res, next) => {
   try {
     const { lon, lat, radius = 50000 } = req.query;
@@ -21,31 +19,23 @@ const getNearbyFighters = async (req, res, next) => {
     let fighters;
 
     if (lon && lat) {
-      // Geospatial query — find fighters within radius meters
-      // $near sorts by distance automatically (closest first)
-      // The 2dsphere index on Fighter.location makes this fast
       fighters = await Fighter.find({
         location: {
           $near: {
-            $geometry: {
-              type: 'Point',
-              coordinates: [parseFloat(lon), parseFloat(lat)],
-            },
+            $geometry: { type: 'Point', coordinates: [parseFloat(lon), parseFloat(lat)] },
             $maxDistance: parseInt(radius),
           },
         },
-      }).populate('userId', 'username avatarUrl'); // join username from User collection
+      }).populate('userId', 'username avatarUrl');
     } else {
-      // No location — return all available fighters
       fighters = await Fighter.find({ availableToFight: true })
         .populate('userId', 'username avatarUrl')
         .limit(100);
     }
 
-    // Shape the response — attach username to each fighter object
     const result = fighters.map((f) => ({
       ...f.toPublicJSON(),
-      username: f.userId?.username || 'Fighter',
+      username:  f.userId?.username  || 'Fighter',
       avatarUrl: f.userId?.avatarUrl || null,
     }));
 
@@ -56,16 +46,19 @@ const getNearbyFighters = async (req, res, next) => {
 };
 
 // ─── GET /api/fighter/:id ─────────────────────────────────────────────────────
+// Public profile — shareable link. Populates badge details (name + emoji)
+// so the profile page can render them without a separate request.
 const getProfileById = async (req, res, next) => {
   try {
     const fighter = await Fighter.findById(req.params.id)
-      .populate('userId', 'username avatarUrl');
+      .populate('userId', 'username avatarUrl')
+      .populate('badgesEarned', 'name badgeEmoji color city');
 
     if (!fighter) return res.status(404).json({ error: 'Fighter not found' });
 
     res.json({
       ...fighter.toPublicJSON(),
-      username: fighter.userId?.username || 'Fighter',
+      username:  fighter.userId?.username  || 'Fighter',
       avatarUrl: fighter.userId?.avatarUrl || null,
     });
   } catch (err) {
@@ -80,9 +73,7 @@ const updateMyProfile = async (req, res, next) => {
 
     const updates = {};
     for (const field of allowedFields) {
-      if (req.body[field] !== undefined) {
-        updates[field] = req.body[field];
-      }
+      if (req.body[field] !== undefined) updates[field] = req.body[field];
     }
 
     if (Object.keys(updates).length === 0) {
