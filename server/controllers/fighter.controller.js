@@ -69,7 +69,7 @@ const getProfileById = async (req, res, next) => {
 // ─── PATCH /api/fighter/me ────────────────────────────────────────────────────
 const updateMyProfile = async (req, res, next) => {
   try {
-    const allowedFields = ['heightCm', 'weightKg', 'reachCm', 'availableToFight', 'location'];
+    const allowedFields = ['heightCm', 'weightKg', 'reachCm', 'availableToFight', 'location', 'needsOnboarding'];
 
     const updates = {};
     for (const field of allowedFields) {

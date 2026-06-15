@@ -27,6 +27,12 @@ const fighterSchema = new mongoose.Schema(
       unique: true, // one fighter profile per user account
     },
 
+    // True for Google OAuth users until they fill in their real stats
+    needsOnboarding: {
+      type: Boolean,
+      default: false,
+    },
+
     // ── Body stats ────────────────────────────────────────────────────────────
     heightCm: {
       type: Number,
@@ -161,20 +167,21 @@ fighterSchema.set('toJSON', { virtuals: true });
 // Your own profile gets more detail; a stranger only sees this.
 fighterSchema.methods.toPublicJSON = function () {
   return {
-    _id: this._id,
-    userId: this.userId,
-    heightCm: this.heightCm,
-    weightKg: this.weightKg,
-    reachCm: this.reachCm,
-    weightClass: this.weightClass,
-    eloRating: this.eloRating,
-    wins: this.wins,
-    losses: this.losses,
-    winRate: this.winRate,
-    totalFights: this.totalFights,
+    _id:              this._id,
+    userId:           this.userId,
+    heightCm:         this.heightCm,
+    weightKg:         this.weightKg,
+    reachCm:          this.reachCm,
+    weightClass:      this.weightClass,
+    eloRating:        this.eloRating,
+    wins:             this.wins,
+    losses:           this.losses,
+    winRate:          this.winRate,
+    totalFights:      this.totalFights,
     availableToFight: this.availableToFight,
-    badgesEarned: this.badgesEarned,
-    location: this.location, // ← add this line
+    badgesEarned:     this.badgesEarned,
+    location:         this.location,
+    needsOnboarding:  this.needsOnboarding,
   };
 };
 

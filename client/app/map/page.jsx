@@ -132,6 +132,10 @@ export default function MapPage() {
             <span className="nav-text">LEADERBOARD</span>
             <span className="nav-icon">🏆</span>
           </Link>
+          <Link href="/fighters" style={s.navLink}>
+            <span className="nav-text">FIGHTERS</span>
+            <span className="nav-icon">👊</span>
+          </Link>
         </div>
 
         <div style={s.navRight}>
