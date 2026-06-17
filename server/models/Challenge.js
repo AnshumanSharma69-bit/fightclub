@@ -41,6 +41,19 @@ const challengeSchema = new mongoose.Schema(
       default: null,
     },
 
+    // Photo proof uploaded by the winner
+    proofImageUrl: {
+      type: String,
+      default: null,
+    },
+
+    // Who uploaded the proof
+    proofUploadedBy: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'Fighter',
+      default: null,
+    },
+
     winnerId: {
       type: mongoose.Schema.Types.ObjectId,
       ref: 'Fighter',

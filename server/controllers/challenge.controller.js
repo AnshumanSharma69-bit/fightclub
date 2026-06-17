@@ -1,7 +1,8 @@
-const Challenge = require('../models/Challenge');
-const Fighter   = require('../models/Fighter');
+const Challenge  = require('../models/Challenge');
+const Fighter    = require('../models/Fighter');
 const { calculateNewRatings } = require('../utils/elo');
 const { checkAndAwardBadge }  = require('../utils/badge');
+const { uploadFightProof }    = require('../utils/cloudinary');
 
 function generateMeetupCode() {
   return Math.random().toString(36).substring(2, 8).toUpperCase();
@@ -124,17 +125,85 @@ const declineChallenge = async (req, res, next) => {
   }
 };
 
-// ─── POST /api/challenge/:id/confirm ─────────────────────────────────────────
-// Body: { winnerId } — fighter _id of who YOU think won, as a string
+// ─── POST /api/challenge/:id/upload-proof ────────────────────────────────────
+// Winner uploads a photo as proof they won.
+// Body: { image: <base64 string>, claimedWinnerId: <fighter _id> }
 //
-// Important: the response message is written from the perspective of the
-// fighter who is CALLING this endpoint right now — they might be the winner
-// OR the loser of the fight. "You captured the badge" would be wrong and
-// confusing if shown to the loser, so we branch on that explicitly.
+// This replaces the old "I Won" button — instead of just tapping a button,
+// the winner must upload a photo. The loser then confirms or disputes.
+const uploadProof = async (req, res, next) => {
+  try {
+    const { image, claimedWinnerId } = req.body;
+
+    if (!image)           return res.status(400).json({ error: 'image is required (base64)' });
+    if (!claimedWinnerId) return res.status(400).json({ error: 'claimedWinnerId is required' });
+
+    const fighter = await Fighter.findOne({ userId: req.user._id });
+    if (!fighter) return res.status(404).json({ error: 'Fighter profile not found' });
+
+    const challenge = await Challenge.findById(req.params.id);
+    if (!challenge) return res.status(404).json({ error: 'Challenge not found' });
+    if (challenge.status !== 'accepted') {
+      return res.status(400).json({ error: 'Challenge must be accepted before uploading proof' });
+    }
+
+    const myId         = fighter._id.toString();
+    const challengerId = challenge.challengerId.toString();
+    const defenderId   = challenge.defenderId.toString();
+
+    if (myId !== challengerId && myId !== defenderId) {
+      return res.status(403).json({ error: 'You are not part of this challenge' });
+    }
+
+    // Only the person claiming to have won should upload proof
+    if (myId !== claimedWinnerId.toString()) {
+      return res.status(400).json({ error: 'Only the winner should upload proof' });
+    }
+
+    // Upload to Cloudinary
+    const proofImageUrl = await uploadFightProof(image, challenge._id.toString());
+
+    // Record the winner's claim + proof
+    challenge.proofImageUrl    = proofImageUrl;
+    challenge.proofUploadedBy  = fighter._id;
+    challenge.challengerReportedWinner = myId === challengerId ? claimedWinnerId : challenge.challengerReportedWinner;
+    challenge.defenderReportedWinner   = myId === defenderId   ? claimedWinnerId : challenge.defenderReportedWinner;
+
+    if (myId === challengerId) challenge.challengerConfirmed = true;
+    else                        challenge.defenderConfirmed   = true;
+
+    await challenge.save();
+
+    // Notify the opponent — they need to confirm or dispute
+    const opponentId = myId === challengerId ? defenderId : challengerId;
+    const io = req.app.get('io');
+    if (io) {
+      io.to(opponentId).emit('challenge:proofUploaded', {
+        challengeId:    challenge._id,
+        proofImageUrl,
+        claimedWinner:  claimedWinnerId,
+        uploaderName:   req.user.username,
+      });
+    }
+
+    res.json({
+      message:       '✅ Proof uploaded — waiting for opponent to confirm or dispute',
+      proofImageUrl,
+    });
+  } catch (err) {
+    next(err);
+  }
+};
+
+// ─── POST /api/challenge/:id/confirm ─────────────────────────────────────────
+// The LOSER (or the second fighter) confirms the result shown in the proof.
+// Body: { agree: true/false }
+// agree: true  → confirms the proof is correct, ELO updates
+// agree: false → disputes the result, flagged for review
 const confirmResult = async (req, res, next) => {
   try {
-    const { winnerId } = req.body;
-    if (!winnerId) return res.status(400).json({ error: 'winnerId is required' });
+    const { agree } = req.body;
+    if (agree === undefined) return res.status(400).json({ error: 'agree (true/false) is required' });
 
     const fighter = await Fighter.findOne({ userId: req.user._id });
     if (!fighter) return res.status(404).json({ error: 'Fighter profile not found' });
@@ -143,7 +212,11 @@ const confirmResult = async (req, res, next) => {
     if (!challenge) return res.status(404).json({ error: 'Challenge not found' });
 
     if (challenge.status !== 'accepted') {
-      return res.status(400).json({ error: 'Challenge must be accepted before confirming result' });
+      return res.status(400).json({ error: 'Challenge must be accepted first' });
+    }
+
+    if (!challenge.proofImageUrl) {
+      return res.status(400).json({ error: 'Winner must upload proof first' });
     }
 
     const myId         = fighter._id.toString();
@@ -156,89 +229,71 @@ const confirmResult = async (req, res, next) => {
       return res.status(403).json({ error: 'You are not part of this challenge' });
     }
 
-    // Record this fighter's own report of who won
-    if (isChallenger) {
-      if (challenge.challengerConfirmed) {
-        return res.status(400).json({ error: 'You already confirmed this result' });
-      }
-      challenge.challengerConfirmed      = true;
-      challenge.challengerReportedWinner = winnerId;
-    } else {
-      if (challenge.defenderConfirmed) {
-        return res.status(400).json({ error: 'You already confirmed this result' });
-      }
-      challenge.defenderConfirmed      = true;
-      challenge.defenderReportedWinner = winnerId;
+    // Can't confirm your own proof
+    const proofUploaderId = challenge.proofUploadedBy?.toString();
+    if (myId === proofUploaderId) {
+      return res.status(400).json({ error: 'You cannot confirm your own proof — wait for your opponent' });
+    }
+
+    // Already confirmed?
+    const alreadyConfirmed = isChallenger ? challenge.challengerConfirmed : challenge.defenderConfirmed;
+    if (alreadyConfirmed) {
+      return res.status(400).json({ error: 'You already responded to this result' });
     }
 
     const io = req.app.get('io');
 
-    // ── Only one side has confirmed so far ──────────────────────────────────
-    if (!(challenge.challengerConfirmed && challenge.defenderConfirmed)) {
-      await challenge.save();
-
-      // Let the other fighter's UI update in real time (no manual refresh needed)
-      const otherFighterId = isChallenger ? defenderId : challengerId;
-      if (io) {
-        io.to(otherFighterId).emit('challenge:updated', { challengeId: challenge._id });
-      }
-
-      return res.json({ message: '⏳ Your result recorded — waiting for opponent to confirm.' });
-    }
-
-    // ── Both sides confirmed — check agreement ──────────────────────────────
-    challenge.status = 'completed';
-    const cWinner = challenge.challengerReportedWinner?.toString();
-    const dWinner = challenge.defenderReportedWinner?.toString();
-
-    if (cWinner !== dWinner) {
+    if (!agree) {
+      // Dispute
       challenge.disputed = true;
+      challenge.status   = 'completed';
+      if (isChallenger) { challenge.challengerConfirmed = true; }
+      else               { challenge.defenderConfirmed   = true; }
       await challenge.save();
 
       if (io) {
         io.to(challengerId).emit('challenge:completed', { challengeId: challenge._id, disputed: true });
-        io.to(defenderId).emit('challenge:completed',  { challengeId: challenge._id, disputed: true });
+        io.to(defenderId).emit('challenge:completed',   { challengeId: challenge._id, disputed: true });
       }
 
-      return res.json({
-        message: '⚠️ Disputed result — both fighters reported different winners. An admin will review.',
-        disputed: true,
-      });
+      return res.json({ message: '⚠️ Result disputed — an admin will review the proof.', disputed: true });
     }
 
-    // ── Agreement — update ELO and check badges ─────────────────────────────
-    const agreedWinnerId = cWinner;
+    // Agreed — the proof winner is accepted
+    const agreedWinnerId = challenge.proofUploadedBy.toString();
     const agreedLoserId  = agreedWinnerId === challengerId ? defenderId : challengerId;
+
+    if (isChallenger) challenge.challengerConfirmed = true;
+    else               challenge.defenderConfirmed   = true;
+
+    challenge.status   = 'completed';
+    challenge.winnerId = agreedWinnerId;
 
     const winner = await Fighter.findById(agreedWinnerId);
     const loser  = await Fighter.findById(agreedLoserId);
 
-    if (!winner || !loser) {
-      await challenge.save();
-      return res.json({ message: '✅ Result confirmed — ELO updated!', disputed: false });
+    if (winner && loser) {
+      const { winnerNewRating, loserNewRating } = calculateNewRatings(winner.eloRating, loser.eloRating);
+
+      winner.eloRating = winnerNewRating;
+      winner.wins      += 1;
+      loser.eloRating  = loserNewRating;
+      loser.losses     += 1;
+
+      await winner.save();
+      await loser.save();
     }
 
-    const { winnerNewRating, loserNewRating } = calculateNewRatings(winner.eloRating, loser.eloRating);
-
-    winner.eloRating   = winnerNewRating;
-    winner.wins       += 1;
-    loser.eloRating    = loserNewRating;
-    loser.losses      += 1;
-    challenge.winnerId = agreedWinnerId;
-
-    await winner.save();
-    await loser.save();
     await challenge.save();
 
     const { badgeAwarded, zone, reason } = await checkAndAwardBadge(agreedWinnerId, agreedLoserId);
 
-    // Message is from the CALLER's perspective — they may be winner or loser
-    const callerIsWinner = myId === agreedWinnerId;
-    const myNewRating    = callerIsWinner ? winnerNewRating : loserNewRating;
+    const callerIsWinner  = myId === agreedWinnerId;
+    const myNewRating     = callerIsWinner ? winner?.eloRating : loser?.eloRating;
 
     let message = callerIsWinner
       ? `✅ Result confirmed — you won! New ELO: ${myNewRating}`
-      : `✅ Result confirmed — ELO updated. New ELO: ${myNewRating}`;
+      : `✅ Result confirmed. New ELO: ${myNewRating}`;
 
     if (badgeAwarded) {
       if (callerIsWinner) {
@@ -252,33 +307,16 @@ const confirmResult = async (req, res, next) => {
 
     if (io) {
       io.to(agreedWinnerId).emit('challenge:completed', {
-        challengeId: challenge._id,
-        disputed:    false,
-        youWon:      true,
-        newRating:   winnerNewRating,
-        badgeAwarded,
-        badgeReason: reason || null,
-        badgeName:   zone?.name || null,
+        challengeId: challenge._id, disputed: false, youWon: true,
+        newRating: winner?.eloRating, badgeAwarded, badgeName: zone?.name || null,
       });
       io.to(agreedLoserId).emit('challenge:completed', {
-        challengeId: challenge._id,
-        disputed:    false,
-        youWon:      false,
-        newRating:   loserNewRating,
-        badgeLost:   badgeAwarded && reason === 'captured',
-        badgeName:   zone?.name || null,
+        challengeId: challenge._id, disputed: false, youWon: false,
+        newRating: loser?.eloRating, badgeLost: badgeAwarded && reason === 'captured',
       });
     }
 
-    res.json({
-      message,
-      winnerNewRating,
-      loserNewRating,
-      badgeAwarded,
-      badgeName:  zone?.name  || null,
-      badgeEmoji: zone?.badgeEmoji || null,
-      disputed:   false,
-    });
+    res.json({ message, disputed: false, badgeAwarded, badgeName: zone?.name || null });
   } catch (err) {
     next(err);
   }
@@ -304,4 +342,11 @@ const getMyChallenges = async (req, res, next) => {
   }
 };
 
-module.exports = { sendChallenge, acceptChallenge, declineChallenge, confirmResult, getMyChallenges };
+module.exports = {
+  sendChallenge,
+  acceptChallenge,
+  declineChallenge,
+  uploadProof,
+  confirmResult,
+  getMyChallenges,
+};

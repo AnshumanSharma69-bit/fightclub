@@ -1,3 +1,5 @@
+require('dotenv').config();
+
 const express    = require('express');
 const cors       = require('cors');
 const helmet     = require('helmet');
@@ -6,7 +8,6 @@ const http       = require('http');
 const { Server } = require('socket.io');
 const passport   = require('./config/passport');
 const connectDB  = require('./config/db');
-require('dotenv').config();
 
 const authRoutes      = require('./routes/auth.routes');
 const fighterRoutes   = require('./routes/fighter.routes');
@@ -40,7 +41,7 @@ connectDB();
 
 app.use(helmet());
 app.use(morgan('dev'));
-app.use(express.json());
+app.use(express.json({ limit: '10mb' })); // increased for base64 image uploads
 app.use(passport.initialize());
 const allowedOrigins = [
   (process.env.CLIENT_URL || 'http://localhost:3000').replace(/\/$/, ''),
