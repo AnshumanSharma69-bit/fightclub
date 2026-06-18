@@ -12,6 +12,37 @@ export default function MapView({ onFighterClick, currentFighterId }) {
   const [status, setStatus] = useState('');
 
   useEffect(() => {
+    // Inject pulse animation styles once, globally, since Leaflet markers
+    // render outside React's normal style scoping (divIcon uses raw HTML)
+    if (typeof document !== 'undefined' && !document.getElementById('fc-pin-pulse-style')) {
+      const style = document.createElement('style');
+      style.id = 'fc-pin-pulse-style';
+      style.textContent = `
+        @keyframes fc-pin-pulse {
+          0%, 100% { box-shadow: 0 0 0 0 rgba(204,34,0,0.5), 0 2px 12px rgba(0,0,0,0.5); }
+          50%      { box-shadow: 0 0 0 7px rgba(204,34,0,0), 0 2px 12px rgba(0,0,0,0.5); }
+        }
+        .fc-pin-available { animation: fc-pin-pulse 1.8s ease-in-out infinite; }
+
+        @keyframes fc-badge-stamp {
+          0%   { transform: scale(2) rotate(-6deg); opacity: 0; }
+          55%  { transform: scale(0.94) rotate(2deg); opacity: 1; }
+          100% { transform: scale(1) rotate(0deg); opacity: 1; }
+        }
+        .fc-zone-label-held { animation: fc-badge-stamp 0.5s cubic-bezier(0.34, 1.56, 0.64, 1) both; }
+
+        .fc-marker-pop { animation: fc-marker-pop 0.28s cubic-bezier(0.34, 1.56, 0.64, 1) both; }
+        @keyframes fc-marker-pop {
+          0%   { transform: scale(0); }
+          70%  { transform: scale(1.15); }
+          100% { transform: scale(1); }
+        }
+      `;
+      document.head.appendChild(style);
+    }
+  }, []);
+
+  useEffect(() => {
     let L;
 
     const initMap = async () => {
@@ -121,7 +152,7 @@ export default function MapView({ onFighterClick, currentFighterId }) {
         const center  = bounds.getCenter();
         const label   = L.divIcon({
           className: '',
-          html: `<div style="
+          html: `<div class="${zone.holder ? 'fc-zone-label-held' : ''}" style="
             background: ${zone.holder ? color + 'cc' : 'rgba(30,30,30,0.85)'};
             border: 1px solid ${zone.holder ? color : '#333'};
             border-radius: 8px;
@@ -187,14 +218,13 @@ export default function MapView({ onFighterClick, currentFighterId }) {
 
         const pinIcon = L.divIcon({
           className: '',
-          html: `<div style="
+          html: `<div class="fc-marker-pop${isAvailable && !isOwn ? ' fc-pin-available' : ''}" style="
             width:38px;height:38px;
             background:${isOwn ? '#3b82f6' : isAvailable ? '#e63946' : '#2a2a2a'};
             border:2.5px solid ${isOwn ? '#93c5fd' : isAvailable ? '#ff8fa3' : '#444'};
             border-radius:50%;
             display:flex;align-items:center;justify-content:center;
             color:#fff;font-size:13px;font-weight:700;
-            box-shadow:0 2px 12px rgba(0,0,0,0.5);
             cursor:pointer;
             position:relative;
           ">

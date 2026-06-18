@@ -141,6 +141,7 @@ export default function MapPage() {
         <div style={s.navRight}>
           {/* Available toggle */}
           <button
+            className="toggle-anim"
             style={{
               ...s.toggleBtn,
               background: isAvailable ? '#0a1f0a' : 'transparent',
@@ -156,7 +157,7 @@ export default function MapPage() {
           </button>
 
           {/* Bell */}
-          <button style={s.bellBtn} onClick={handleNotificationClick}>
+          <button className="bell-shake" style={s.bellBtn} onClick={handleNotificationClick}>
             <span style={s.bellIcon}>⚔</span>
             {unreadCount > 0 && <span style={s.badge}>{unreadCount}</span>}
           </button>
@@ -193,7 +194,11 @@ export default function MapPage() {
         )}
 
         {/* Sidebar */}
-        <div className={`sidebar ${mobileSidebarOpen ? 'open' : ''}`} style={s.sidebar}>
+        <div
+          key={showNotifications ? 'notifications' : selectedFighter ? `fighter-${selectedFighter._id}` : 'own-profile'}
+          className={`sidebar ${mobileSidebarOpen ? 'open' : ''}`}
+          style={s.sidebar}
+        >
           <div className="sidebar-handle" onClick={() => setMobileSidebarOpen(false)}>
             <div className="handle-bar" />
           </div>
@@ -227,6 +232,48 @@ export default function MapPage() {
       )}
 
       <style jsx>{`
+        @keyframes slideInPunch {
+          0%   { transform: translateX(100%); }
+          60%  { transform: translateX(-8px); }
+          100% { transform: translateX(0); }
+        }
+        @keyframes slideUpPunch {
+          0%   { transform: translateY(100%); }
+          55%  { transform: translateY(-10px); }
+          100% { transform: translateY(0); }
+        }
+        @keyframes fadeSlideIn {
+          0%   { opacity: 0; transform: translateY(6px); }
+          100% { opacity: 1; transform: translateY(0); }
+        }
+        @keyframes pinPulse {
+          0%, 100% { box-shadow: 0 0 0 0 rgba(204,34,0,0.55); }
+          50%      { box-shadow: 0 0 0 8px rgba(204,34,0,0); }
+        }
+        @keyframes badgeStamp {
+          0%   { transform: scale(2.2) rotate(-8deg); opacity: 0; }
+          60%  { transform: scale(0.92) rotate(2deg); opacity: 1; }
+          100% { transform: scale(1) rotate(0deg); opacity: 1; }
+        }
+        @keyframes shakeOnce {
+          0%, 100% { transform: translateX(0); }
+          20%      { transform: translateX(-3px); }
+          40%      { transform: translateX(3px); }
+          60%      { transform: translateX(-2px); }
+          80%      { transform: translateX(2px); }
+        }
+
+        .sidebar { animation: fadeSlideIn 0.3s ease both; }
+        .sidebar > * { animation: fadeSlideIn 0.35s ease both; }
+
+        button { transition: transform 0.08s ease, background-color 0.15s ease, border-color 0.15s ease; }
+        button:active:not(:disabled) { transform: scale(0.94); }
+
+        .toggle-anim { transition: background-color 0.18s ease, border-color 0.18s ease; }
+        .toggle-anim:active:not(:disabled) { transform: scale(0.95); }
+
+        .bell-shake:not(:disabled):active { animation: shakeOnce 0.3s ease; }
+
         .nav-icon { display: none; }
         .nav-text  { display: inline; }
         .mobile-fab, .mobile-backdrop, .sidebar-handle { display: none; }
@@ -243,11 +290,8 @@ export default function MapPage() {
             border-left: none !important;
             border-top: 1px solid #1c1c1c;
             border-radius: 8px 8px 0 0;
-            transform: translateY(100%);
-            transition: transform 0.25s ease;
-            z-index: 1500;
+            animation: slideUpPunch 0.32s cubic-bezier(0.22, 1.4, 0.36, 1) both;
           }
-          .sidebar.open { transform: translateY(0); }
 
           .sidebar-handle {
             display: flex;
@@ -260,7 +304,9 @@ export default function MapPage() {
             width: 36px; height: 3px;
             border-radius: 2px;
             background: #2a2a2a;
+            transition: background 0.15s ease;
           }
+          .sidebar-handle:active .handle-bar { background: #cc2200; }
 
           .mobile-fab {
             display: flex;
@@ -280,7 +326,9 @@ export default function MapPage() {
             box-shadow: 0 4px 20px rgba(204,34,0,0.4);
             z-index: 1300;
             cursor: pointer;
+            animation: fadeSlideIn 0.4s ease 0.1s both;
           }
+          .mobile-fab:active { transform: scale(0.88); }
           .fab-badge {
             position: absolute;
             top: -6px; right: -6px;
@@ -296,6 +344,7 @@ export default function MapPage() {
             justify-content: center;
             padding: 0 4px;
             font-family: 'Inter', sans-serif;
+            animation: badgeStamp 0.4s cubic-bezier(0.34, 1.56, 0.64, 1) both;
           }
           .mobile-backdrop {
             display: block;
@@ -303,6 +352,13 @@ export default function MapPage() {
             inset: 0;
             background: rgba(0,0,0,0.7);
             z-index: 1400;
+            animation: fadeSlideIn 0.2s ease both;
+          }
+        }
+
+        @media (min-width: 769px) {
+          .sidebar {
+            animation: slideInPunch 0.3s cubic-bezier(0.22, 1.4, 0.36, 1) both;
           }
         }
       `}</style>

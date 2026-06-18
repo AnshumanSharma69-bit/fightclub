@@ -41,16 +41,13 @@ const challengeSchema = new mongoose.Schema(
       default: null,
     },
 
-    // Photo proof uploaded by the winner
-    proofImageUrl: {
+    // Photo proof — each fighter can independently upload their own
+    challengerProofUrl: {
       type: String,
       default: null,
     },
-
-    // Who uploaded the proof
-    proofUploadedBy: {
-      type: mongoose.Schema.Types.ObjectId,
-      ref: 'Fighter',
+    defenderProofUrl: {
+      type: String,
       default: null,
     },
 

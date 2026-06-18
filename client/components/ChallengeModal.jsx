@@ -23,8 +23,27 @@ export default function ChallengeModal({ fighter, onClose, onSent }) {
   };
 
   return (
-    <div style={s.overlay} onClick={onClose}>
-      <div style={s.modal} onClick={e => e.stopPropagation()}>
+    <div className="modal-backdrop-fade" style={s.overlay} onClick={onClose}>
+      <div className="modal-punch" style={s.modal} onClick={e => e.stopPropagation()}>
+        <style jsx>{`
+          @keyframes punchIn {
+            0%   { transform: scale(0.7) rotate(-3deg); opacity: 0; }
+            55%  { transform: scale(1.04) rotate(1deg); opacity: 1; }
+            100% { transform: scale(1) rotate(0deg); opacity: 1; }
+          }
+          @keyframes fadeBackdrop {
+            0%   { opacity: 0; }
+            100% { opacity: 1; }
+          }
+          @keyframes vsThud {
+            0%   { transform: scale(1.8) rotate(-10deg); opacity: 0; }
+            60%  { transform: scale(0.9) rotate(3deg); opacity: 1; }
+            100% { transform: scale(1) rotate(0deg); opacity: 1; }
+          }
+          .modal-punch { animation: punchIn 0.28s cubic-bezier(0.34, 1.56, 0.64, 1) both; }
+          .modal-backdrop-fade { animation: fadeBackdrop 0.18s ease both; }
+          .vs-thud { animation: vsThud 0.4s cubic-bezier(0.34, 1.56, 0.64, 1) 0.15s both; }
+        `}</style>
 
         {/* Header */}
         <div style={s.header}>
@@ -44,7 +63,7 @@ export default function ChallengeModal({ fighter, onClose, onSent }) {
               {fighter.weightClass} · ELO {fighter.eloRating} · {fighter.wins}W {fighter.losses}L
             </div>
           </div>
-          <div style={s.vsTag}>VS</div>
+          <div style={s.vsTag} className="vs-thud">VS</div>
         </div>
 
         {/* Message */}
