@@ -26,10 +26,6 @@ export default function MapPage() {
   const socketRef = useRef(null);
 
   useEffect(() => {
-    if (!loading && !user) router.push('/login');
-  }, [user, loading, router]);
-
-  useEffect(() => {
     if (fighter) {
       fetchChallenges();
       initSocket();
@@ -76,9 +72,9 @@ export default function MapPage() {
       </div>
     );
   }
-  if (!user) return null;
 
   const handleToggleAvailable = async () => {
+    if (!user) { router.push('/login'); return; }
     if (!fighter) return;
     setToggling(true);
     try {
@@ -103,9 +99,14 @@ export default function MapPage() {
     setMobileSidebarOpen(true);
   };
 
-  const handleChallenge = (f) => { setSelectedFighter(null); setChallengeTarget(f); };
+  const handleChallenge = (f) => {
+    if (!user) { router.push('/login'); return; }
+    setSelectedFighter(null);
+    setChallengeTarget(f);
+  };
 
   const handleNotificationClick = () => {
+    if (!user) { router.push('/login'); return; }
     const opening = !showNotifications;
     setShowNotifications(opening);
     setUnreadCount(0);
@@ -113,12 +114,59 @@ export default function MapPage() {
   };
 
   const openOwnProfile = () => {
+    if (!user) { router.push('/login'); return; }
     setSelectedFighter(null);
     setShowNotifications(false);
     setMobileSidebarOpen(true);
   };
 
   const isAvailable = fighter?.availableToFight;
+
+  // Sidebar content — guests see a join CTA, logged-in users see normal flow
+  const sidebarContent = () => {
+    if (!user) {
+      return (
+        <div style={s.guestSidebar}>
+          <div style={s.guestTitle}>JOIN THE FIGHT</div>
+          <div style={s.guestText}>
+            Create a profile to challenge fighters near you, earn territory badges, and climb the leaderboard.
+          </div>
+          <Link href="/register" style={s.guestRegisterBtn}>CREATE FIGHTER PROFILE →</Link>
+          <Link href="/login" style={s.guestLoginLink}>Already a fighter? Sign in</Link>
+          {selectedFighter && (
+            <div style={{ marginTop: '16px', borderTop: '1px solid #1c1c1c', paddingTop: '16px' }}>
+              <SidebarHeader title="FIGHTER" onClose={() => setSelectedFighter(null)} />
+              <FighterCard fighter={selectedFighter} isOwn={false} onChallenge={handleChallenge} />
+            </div>
+          )}
+        </div>
+      );
+    }
+
+    if (showNotifications) return (
+      <>
+        <SidebarHeader title="CHALLENGES" onClose={() => setShowNotifications(false)} />
+        <NotificationsPanel challenges={challenges} fighterId={fighter?._id} onUpdate={handleChallengeUpdate} />
+      </>
+    );
+
+    if (selectedFighter) return (
+      <>
+        <SidebarHeader title="FIGHTER" onClose={() => setSelectedFighter(null)} />
+        <FighterCard fighter={selectedFighter} isOwn={selectedFighter._id === fighter?._id} onChallenge={handleChallenge} />
+      </>
+    );
+
+    return (
+      <>
+        <SidebarHeader title="YOUR PROFILE" />
+        <FighterCard fighter={{ ...fighter, username: user.username }} isOwn />
+        <p style={s.hint}>Tap a fighter pin to view their profile and challenge them</p>
+      </>
+    );
+  };
+
+  const sidebarKey = !user ? 'guest' : showNotifications ? 'notifications' : selectedFighter ? `fighter-${selectedFighter._id}` : 'own-profile';
 
   return (
     <div style={s.root}>
@@ -139,40 +187,48 @@ export default function MapPage() {
         </div>
 
         <div style={s.navRight}>
-          {/* Available toggle */}
-          <button
-            className="toggle-anim"
-            style={{
-              ...s.toggleBtn,
-              background: isAvailable ? '#0a1f0a' : 'transparent',
-              border: `1px solid ${isAvailable ? '#1a5c1a' : '#2a2a2a'}`,
-              color: isAvailable ? '#4ade80' : '#4a4a4a',
-            }}
-            onClick={handleToggleAvailable}
-            disabled={toggling}
-          >
-            <span style={{ width: '6px', height: '6px', borderRadius: '50%', background: isAvailable ? '#4ade80' : '#3a3a3a', display: 'inline-block', marginRight: '7px', flexShrink: 0 }} />
-            <span className="nav-text">{toggling ? 'UPDATING...' : isAvailable ? 'AVAILABLE' : 'GO AVAILABLE'}</span>
-            <span className="nav-icon">{isAvailable ? '●' : '○'}</span>
-          </button>
-
-          {/* Bell */}
-          <button className="bell-shake" style={s.bellBtn} onClick={handleNotificationClick}>
-            <span style={s.bellIcon}>⚔</span>
-            {unreadCount > 0 && <span style={s.badge}>{unreadCount}</span>}
-          </button>
-
-          {/* User */}
-          <button style={s.userBtn} onClick={openOwnProfile}>
-            <div style={s.userAvatar}>{user.username?.[0]?.toUpperCase()}</div>
-            <span className="nav-text" style={s.userName}>{user.username}</span>
-          </button>
-
-          {/* Sign out */}
-          <button style={s.signOutBtn} onClick={() => { logout(); router.push('/login'); }}>
-            <span className="nav-text">SIGN OUT</span>
-            <span className="nav-icon">⏻</span>
-          </button>
+          {user ? (
+            <>
+              <button
+                className="toggle-anim"
+                style={{
+                  ...s.toggleBtn,
+                  background: isAvailable ? '#0a1f0a' : 'transparent',
+                  border: `1px solid ${isAvailable ? '#1a5c1a' : '#2a2a2a'}`,
+                  color: isAvailable ? '#4ade80' : '#4a4a4a',
+                }}
+                onClick={handleToggleAvailable}
+                disabled={toggling}
+              >
+                <span style={{ width: '6px', height: '6px', borderRadius: '50%', background: isAvailable ? '#4ade80' : '#3a3a3a', display: 'inline-block', marginRight: '7px', flexShrink: 0 }} />
+                <span className="nav-text">{toggling ? 'UPDATING...' : isAvailable ? 'AVAILABLE' : 'GO AVAILABLE'}</span>
+                <span className="nav-icon">{isAvailable ? '●' : '○'}</span>
+              </button>
+              <button className="bell-shake" style={s.bellBtn} onClick={handleNotificationClick}>
+                <span style={s.bellIcon}>⚔</span>
+                {unreadCount > 0 && <span style={s.badge}>{unreadCount}</span>}
+              </button>
+              <button style={s.userBtn} onClick={openOwnProfile}>
+                <div style={s.userAvatar}>{user.username?.[0]?.toUpperCase()}</div>
+                <span className="nav-text" style={s.userName}>{user.username}</span>
+              </button>
+              <button style={s.signOutBtn} onClick={() => { logout(); router.push('/map'); }}>
+                <span className="nav-text">SIGN OUT</span>
+                <span className="nav-icon">⏻</span>
+              </button>
+            </>
+          ) : (
+            <>
+              <Link href="/login" style={s.guestBtn}>
+                <span className="nav-text">SIGN IN</span>
+                <span className="nav-icon">→</span>
+              </Link>
+              <Link href="/register" style={s.joinBtn}>
+                <span className="nav-text">JOIN THE FIGHT</span>
+                <span className="nav-icon">+</span>
+              </Link>
+            </>
+          )}
         </div>
       </div>
 
@@ -181,45 +237,34 @@ export default function MapPage() {
         <div style={s.mapArea}>
           <MapView onFighterClick={handleFighterClick} currentFighterId={fighter?._id} />
 
-          {/* Mobile FAB */}
-          <button className="mobile-fab" onClick={openOwnProfile} aria-label="Open profile">
-            {user.username?.[0]?.toUpperCase()}
-            {unreadCount > 0 && <span className="fab-badge">{unreadCount}</span>}
-          </button>
+          {user && (
+            <button className="mobile-fab" onClick={openOwnProfile} aria-label="Open profile">
+              {user.username?.[0]?.toUpperCase()}
+              {unreadCount > 0 && <span className="fab-badge">{unreadCount}</span>}
+            </button>
+          )}
+
+          {!user && (
+            <Link href="/register" className="mobile-fab" style={{ textDecoration: 'none', fontSize: '13px', letterSpacing: '0.06em' }}
+              aria-label="Join FightClub">
+              JOIN
+            </Link>
+          )}
         </div>
 
-        {/* Mobile backdrop */}
         {mobileSidebarOpen && (
           <div className="mobile-backdrop" onClick={() => setMobileSidebarOpen(false)} />
         )}
 
-        {/* Sidebar */}
         <div
-          key={showNotifications ? 'notifications' : selectedFighter ? `fighter-${selectedFighter._id}` : 'own-profile'}
+          key={sidebarKey}
           className={`sidebar ${mobileSidebarOpen ? 'open' : ''}`}
           style={s.sidebar}
         >
           <div className="sidebar-handle" onClick={() => setMobileSidebarOpen(false)}>
             <div className="handle-bar" />
           </div>
-
-          {showNotifications ? (
-            <>
-              <SidebarHeader title="CHALLENGES" onClose={() => setShowNotifications(false)} />
-              <NotificationsPanel challenges={challenges} fighterId={fighter?._id} onUpdate={handleChallengeUpdate} />
-            </>
-          ) : selectedFighter ? (
-            <>
-              <SidebarHeader title="FIGHTER" onClose={() => setSelectedFighter(null)} />
-              <FighterCard fighter={selectedFighter} isOwn={selectedFighter._id === fighter?._id} onChallenge={handleChallenge} />
-            </>
-          ) : (
-            <>
-              <SidebarHeader title="YOUR PROFILE" />
-              <FighterCard fighter={{ ...fighter, username: user.username }} isOwn />
-              <div style={s.hint}>TAP A FIGHTER PIN TO VIEW THEIR PROFILE</div>
-            </>
-          )}
+          {sidebarContent()}
         </div>
       </div>
 
@@ -246,15 +291,6 @@ export default function MapPage() {
           0%   { opacity: 0; transform: translateY(6px); }
           100% { opacity: 1; transform: translateY(0); }
         }
-        @keyframes pinPulse {
-          0%, 100% { box-shadow: 0 0 0 0 rgba(204,34,0,0.55); }
-          50%      { box-shadow: 0 0 0 8px rgba(204,34,0,0); }
-        }
-        @keyframes badgeStamp {
-          0%   { transform: scale(2.2) rotate(-8deg); opacity: 0; }
-          60%  { transform: scale(0.92) rotate(2deg); opacity: 1; }
-          100% { transform: scale(1) rotate(0deg); opacity: 1; }
-        }
         @keyframes shakeOnce {
           0%, 100% { transform: translateX(0); }
           20%      { transform: translateX(-3px); }
@@ -265,13 +301,9 @@ export default function MapPage() {
 
         .sidebar { animation: fadeSlideIn 0.3s ease both; }
         .sidebar > * { animation: fadeSlideIn 0.35s ease both; }
-
         button { transition: transform 0.08s ease, background-color 0.15s ease, border-color 0.15s ease; }
         button:active:not(:disabled) { transform: scale(0.94); }
-
         .toggle-anim { transition: background-color 0.18s ease, border-color 0.18s ease; }
-        .toggle-anim:active:not(:disabled) { transform: scale(0.95); }
-
         .bell-shake:not(:disabled):active { animation: shakeOnce 0.3s ease; }
 
         .nav-icon { display: none; }
@@ -291,6 +323,7 @@ export default function MapPage() {
             border-top: 1px solid #1c1c1c;
             border-radius: 8px 8px 0 0;
             animation: slideUpPunch 0.32s cubic-bezier(0.22, 1.4, 0.36, 1) both;
+            z-index: 1500;
           }
 
           .sidebar-handle {
@@ -344,7 +377,6 @@ export default function MapPage() {
             justify-content: center;
             padding: 0 4px;
             font-family: 'Inter', sans-serif;
-            animation: badgeStamp 0.4s cubic-bezier(0.34, 1.56, 0.64, 1) both;
           }
           .mobile-backdrop {
             display: block;
@@ -370,9 +402,7 @@ function SidebarHeader({ title, onClose }) {
   return (
     <div style={sh.root}>
       <div style={sh.title}>{title}</div>
-      {onClose && (
-        <button style={sh.close} onClick={onClose}>✕</button>
-      )}
+      {onClose && <button style={sh.close} onClick={onClose}>✕</button>}
     </div>
   );
 }
@@ -402,22 +432,20 @@ const s = {
   bellIcon:   { fontSize: '14px' },
   badge:      { background: '#cc2200', borderRadius: '2px', color: '#e8e4dc', fontSize: '9px', fontWeight: '700', minWidth: '14px', padding: '1px 3px', position: 'absolute', right: '-5px', top: '-5px' },
   userBtn:    { alignItems: 'center', background: 'transparent', border: '1px solid #1c1c1c', borderRadius: '2px', cursor: 'pointer', display: 'flex', gap: '8px', padding: '4px 10px 4px 4px', flexShrink: 0 },
-  userAvatar: { alignItems: 'center', background: '#cc2200', borderRadius: '1px', color: '#e8e4dc', display: 'flex', fontFamily: "'Bebas Neue', sans-serif", fontSize: '14px', fontWeight: '400', height: '24px', justifyContent: 'center', letterSpacing: '0.05em', width: '24px', flexShrink: 0 },
+  userAvatar: { alignItems: 'center', background: '#cc2200', borderRadius: '1px', color: '#e8e4dc', display: 'flex', fontFamily: "'Bebas Neue', sans-serif", fontSize: '14px', height: '24px', justifyContent: 'center', letterSpacing: '0.05em', width: '24px', flexShrink: 0 },
   userName:   { color: '#4a4a4a', fontSize: '10px', fontWeight: '700', letterSpacing: '0.1em' },
   signOutBtn: { background: 'transparent', border: '1px solid #1c1c1c', borderRadius: '2px', color: '#3a3a3a', cursor: 'pointer', fontSize: '10px', fontWeight: '700', letterSpacing: '0.1em', padding: '6px 10px', flexShrink: 0 },
+  guestBtn:   { color: '#4a4a4a', fontSize: '10px', fontWeight: '700', letterSpacing: '0.15em', textDecoration: 'none', border: '1px solid #1c1c1c', borderRadius: '2px', padding: '6px 12px', flexShrink: 0 },
+  joinBtn:    { background: '#cc2200', color: '#e8e4dc', fontSize: '10px', fontWeight: '700', letterSpacing: '0.12em', textDecoration: 'none', borderRadius: '2px', padding: '6px 12px', flexShrink: 0 },
 
   main:    { display: 'flex', flex: 1, overflow: 'hidden', position: 'relative' },
   mapArea: { flex: 1, position: 'relative', minHeight: 0 },
-  sidebar: {
-    background: '#0d0d0d',
-    borderLeft: '1px solid #1c1c1c',
-    display: 'flex',
-    flexDirection: 'column',
-    gap: '12px',
-    overflowY: 'auto',
-    padding: '16px',
-    width: '290px',
-    flexShrink: 0,
-  },
+  sidebar: { background: '#0d0d0d', borderLeft: '1px solid #1c1c1c', display: 'flex', flexDirection: 'column', gap: '12px', overflowY: 'auto', padding: '16px', width: '290px', flexShrink: 0 },
   hint:    { color: '#2a2a2a', fontSize: '10px', fontWeight: '600', letterSpacing: '0.08em', lineHeight: '1.6', textAlign: 'center', padding: '8px 0' },
+
+  guestSidebar: { display: 'flex', flexDirection: 'column', gap: '12px' },
+  guestTitle:   { color: '#e8e4dc', fontFamily: "'Bebas Neue', sans-serif", fontSize: '22px', letterSpacing: '0.08em' },
+  guestText:    { color: '#4a4a4a', fontSize: '12px', lineHeight: '1.6', letterSpacing: '0.02em' },
+  guestRegisterBtn: { background: '#cc2200', borderRadius: '2px', color: '#e8e4dc', display: 'block', fontFamily: "'Bebas Neue', sans-serif", fontSize: '14px', letterSpacing: '0.1em', padding: '12px', textAlign: 'center', textDecoration: 'none' },
+  guestLoginLink:   { color: '#4a4a4a', display: 'block', fontSize: '11px', fontWeight: '600', letterSpacing: '0.06em', textAlign: 'center', textDecoration: 'none' },
 };
