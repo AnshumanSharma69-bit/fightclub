@@ -109,4 +109,52 @@ const updateMyProfile = async (req, res, next) => {
   }
 };
 
-module.exports = { getMyProfile, getProfileById, updateMyProfile, getNearbyFighters };
+// ─── GET /api/fighter/:id/history ────────────────────────────────────────────
+// Returns completed fights involving this fighter, sorted newest first.
+// Public endpoint — no auth required.
+const getFightHistory = async (req, res, next) => {
+  try {
+    const fighter = await Fighter.findById(req.params.id);
+    if (!fighter) return res.status(404).json({ error: 'Fighter not found' });
+
+    const challenges = await Challenge.find({
+      $or: [
+        { challengerId: fighter._id },
+        { defenderId:   fighter._id },
+      ],
+      status: 'completed',
+    })
+      .populate({ path: 'challengerId', populate: { path: 'userId', select: 'username' } })
+      .populate({ path: 'defenderId',   populate: { path: 'userId', select: 'username' } })
+      .sort({ updatedAt: -1 })
+      .limit(20);
+
+    const history = challenges.map(c => {
+      const isChallenger  = c.challengerId?._id?.toString() === fighter._id.toString();
+      const opponent      = isChallenger ? c.defenderId : c.challengerId;
+      const won           = c.winnerId?.toString() === fighter._id.toString();
+      const myProofUrl    = isChallenger ? c.challengerProofUrl : c.defenderProofUrl;
+      const oppProofUrl   = isChallenger ? c.defenderProofUrl   : c.challengerProofUrl;
+
+      return {
+        _id:          c._id,
+        date:         c.updatedAt,
+        opponent: {
+          _id:      opponent?._id,
+          username: opponent?.userId?.username || 'Unknown',
+        },
+        result:       c.disputed ? 'disputed' : won ? 'win' : 'loss',
+        disputed:     c.disputed,
+        myProofUrl,
+        oppProofUrl,
+        wasChallenger: isChallenger,
+      };
+    });
+
+    res.json(history);
+  } catch (err) {
+    next(err);
+  }
+};
+
+module.exports = { getMyProfile, getProfileById, updateMyProfile, getNearbyFighters, getFightHistory };
