@@ -22,8 +22,6 @@ const userSchema = new mongoose.Schema(
       match: [/^\S+@\S+\.\S+$/, 'Please enter a valid email address'],
     },
 
-    // For Google OAuth users this holds a sentinel value like "google_oauth_<id>"
-    // For local users it holds the bcrypt hash
     passwordHash: {
       type: String,
       required: true,
@@ -34,7 +32,6 @@ const userSchema = new mongoose.Schema(
       default: null,
     },
 
-    // Google OAuth
     googleId: {
       type: String,
       default: null,
@@ -47,6 +44,12 @@ const userSchema = new mongoose.Schema(
       default: 'local',
     },
 
+    // Set manually in MongoDB Atlas to grant admin dashboard access
+    isAdmin: {
+      type: Boolean,
+      default: false,
+    },
+
     isActive: {
       type: Boolean,
       default: true,
@@ -55,7 +58,6 @@ const userSchema = new mongoose.Schema(
   { timestamps: true }
 );
 
-// Only hash if it's a real password — not the Google sentinel value
 userSchema.pre('save', async function () {
   if (!this.isModified('passwordHash')) return;
   if (this.passwordHash?.startsWith('google_oauth_')) return;
@@ -63,7 +65,6 @@ userSchema.pre('save', async function () {
 });
 
 userSchema.methods.comparePassword = async function (plainTextPassword) {
-  // Google-only accounts can't log in with password
   if (this.passwordHash?.startsWith('google_oauth_')) return false;
   return bcrypt.compare(plainTextPassword, this.passwordHash);
 };
@@ -75,6 +76,7 @@ userSchema.methods.toPublicJSON = function () {
     email:        this.email,
     avatarUrl:    this.avatarUrl,
     authProvider: this.authProvider,
+    isAdmin:      this.isAdmin,
     createdAt:    this.createdAt,
   };
 };

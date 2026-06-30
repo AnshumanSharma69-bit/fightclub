@@ -212,6 +212,11 @@ export default function MapPage() {
                 <div style={s.userAvatar}>{user.username?.[0]?.toUpperCase()}</div>
                 <span className="nav-text" style={s.userName}>{user.username}</span>
               </button>
+              {user.isAdmin && (
+  <Link href="/admin" style={{ color: '#f59e0b', fontSize: '10px', fontWeight: '700', letterSpacing: '0.1em', textDecoration: 'none', border: '1px solid #5c4400', borderRadius: '2px', padding: '6px 10px' }}>
+    ADMIN
+  </Link>
+)}
               <button style={s.signOutBtn} onClick={() => { logout(); router.push('/map'); }}>
                 <span className="nav-text">SIGN OUT</span>
                 <span className="nav-icon">⏻</span>
