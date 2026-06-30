@@ -104,6 +104,7 @@ export default function NotificationsPanel({ challenges, fighterId, onUpdate }) 
                 <div><Name>{getName(c.challengerId)}</Name><Meta>wants to fight · {timeAgo(c.createdAt)}</Meta></div>
               </Row>
               {c.message && <MsgBox>"{c.message}"</MsgBox>}
+              <ScheduleBox scheduledFor={c.scheduledFor} meetingPlace={c.meetingPlace} />
               <div style={s.btnRow}>
                 <button style={s.declineBtn} onClick={() => handleDecline(c._id)} disabled={loading}>DECLINE</button>
                 <button style={s.acceptBtn}  onClick={() => handleAccept(c._id)}  disabled={loading}>{loading ? '...' : '✓ ACCEPT'}</button>
@@ -122,6 +123,7 @@ export default function NotificationsPanel({ challenges, fighterId, onUpdate }) 
                 <div><Name>{getName(c.defenderId)}</Name><Meta>awaiting response · {timeAgo(c.createdAt)}</Meta></div>
               </Row>
               {c.message && <MsgBox>"{c.message}"</MsgBox>}
+              <ScheduleBox scheduledFor={c.scheduledFor} meetingPlace={c.meetingPlace} />
             </Card>
           ))}
         </Section>
@@ -132,8 +134,6 @@ export default function NotificationsPanel({ challenges, fighterId, onUpdate }) 
           {active.map(c => {
             const isChallenger    = id(c.challengerId) === fighterId;
             const opponentFighter = isChallenger ? c.defenderId : c.challengerId;
-
-            // MY proof / opponent's proof — independent of who is challenger/defender
             const myProofUrl       = isChallenger ? c.challengerProofUrl : c.defenderProofUrl;
             const opponentProofUrl = isChallenger ? c.defenderProofUrl   : c.challengerProofUrl;
             const myConfirmed      = isChallenger ? c.challengerConfirmed : c.defenderConfirmed;
@@ -152,12 +152,12 @@ export default function NotificationsPanel({ challenges, fighterId, onUpdate }) 
                   <div style={s.codeHint}>Show this to your opponent at the fight</div>
                 </div>
 
-                {/* I haven't uploaded my proof yet — show button */}
+                <ScheduleBox scheduledFor={c.scheduledFor} meetingPlace={c.meetingPlace} prominent />
+
                 {!myProofUrl && (
                   <div style={s.proofSection}>
                     <div style={s.proofLabel}>DID YOU WIN?</div>
                     <div style={s.proofHint}>Either fighter can upload proof — your opponent will be notified</div>
-
                     {isUploadingThis ? (
                       <div style={s.uploadBox}>
                         {previewUrl && <img src={previewUrl} alt="proof preview" style={s.previewImg} />}
@@ -177,7 +177,6 @@ export default function NotificationsPanel({ challenges, fighterId, onUpdate }) 
                   </div>
                 )}
 
-                {/* I already uploaded my proof */}
                 {myProofUrl && (
                   <div style={s.myProofSection}>
                     <div style={s.proofLabel}>YOUR PROOF</div>
@@ -185,15 +184,12 @@ export default function NotificationsPanel({ challenges, fighterId, onUpdate }) 
                   </div>
                 )}
 
-                {/* Opponent uploaded proof and I haven't responded — review it */}
                 {opponentProofUrl && !myConfirmed && (
                   <div style={s.proofSection}>
                     <div style={s.proofLabel}>OPPONENT'S PROOF — THEY CLAIM THEY WON</div>
                     <img src={opponentProofUrl} alt="opponent proof" style={s.proofImg} />
                     <div style={s.proofHint}>
-                      {myProofUrl
-                        ? 'You both uploaded proof — review carefully before confirming'
-                        : 'Review the photo and confirm, or upload your own proof above if you actually won'}
+                      {myProofUrl ? 'You both uploaded proof — review carefully before confirming' : 'Review the photo and confirm, or upload your own proof above if you actually won'}
                     </div>
                     <div style={s.btnRow}>
                       <button style={s.disputeBtn} onClick={() => handleConfirm(c._id, false)} disabled={loading}>⚠ DISPUTE</button>
@@ -202,18 +198,11 @@ export default function NotificationsPanel({ challenges, fighterId, onUpdate }) 
                   </div>
                 )}
 
-                {/* Waiting states */}
                 {myProofUrl && !opponentProofUrl && (
-                  <div style={s.waitingRow}>
-                    <span style={s.waitingDot} />
-                    WAITING FOR {getName(opponentFighter).toUpperCase()} TO RESPOND
-                  </div>
+                  <div style={s.waitingRow}><span style={s.waitingDot} />WAITING FOR {getName(opponentFighter).toUpperCase()} TO RESPOND</div>
                 )}
                 {myConfirmed && (
-                  <div style={s.waitingRow}>
-                    <span style={s.waitingDot} />
-                    RESULT RECORDED
-                  </div>
+                  <div style={s.waitingRow}><span style={s.waitingDot} />RESULT RECORDED</div>
                 )}
               </Card>
             );
@@ -259,6 +248,42 @@ export default function NotificationsPanel({ challenges, fighterId, onUpdate }) 
       )}
     </div>
   );
+}
+
+// Shows scheduled date/time + meeting place if either was set
+function ScheduleBox({ scheduledFor, meetingPlace, prominent }) {
+  if (!scheduledFor && !meetingPlace) return null;
+
+  return (
+    <div style={{ ...s.scheduleBox, ...(prominent ? s.scheduleBoxProminent : {}) }}>
+      {scheduledFor && (
+        <div style={s.scheduleRow}>
+          <span style={s.scheduleIcon}>🗓</span>
+          <span style={s.scheduleText}>{formatScheduledTime(scheduledFor)}</span>
+        </div>
+      )}
+      {meetingPlace && (
+        <div style={s.scheduleRow}>
+          <span style={s.scheduleIcon}>📍</span>
+          <span style={s.scheduleText}>{meetingPlace}</span>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function formatScheduledTime(dateStr) {
+  const d = new Date(dateStr);
+  const now = new Date();
+  const isToday    = d.toDateString() === now.toDateString();
+  const tomorrow    = new Date(now); tomorrow.setDate(now.getDate() + 1);
+  const isTomorrow = d.toDateString() === tomorrow.toDateString();
+
+  const timeStr = d.toLocaleTimeString('en-IN', { hour: 'numeric', minute: '2-digit', hour12: true });
+
+  if (isToday)    return `Today, ${timeStr}`;
+  if (isTomorrow) return `Tomorrow, ${timeStr}`;
+  return d.toLocaleDateString('en-IN', { weekday: 'short', day: 'numeric', month: 'short' }) + `, ${timeStr}`;
 }
 
 function Section({ label, accent, children }) {
@@ -314,6 +339,13 @@ const s = {
   codeLabel:    { color: '#4a4a4a', fontSize: '9px', fontWeight: '700', letterSpacing: '0.15em', marginBottom: '4px' },
   code:         { color: '#cc2200', fontFamily: "'Bebas Neue', sans-serif", fontSize: '28px', letterSpacing: '0.2em', lineHeight: 1 },
   codeHint:     { color: '#3a3a3a', fontSize: '10px', marginTop: '4px', letterSpacing: '0.03em' },
+
+  scheduleBox:  { background: '#0a0e08', border: '1px solid #1a2e1a', borderRadius: '2px', display: 'flex', flexDirection: 'column', gap: '5px', padding: '8px 10px' },
+  scheduleBoxProminent: { background: '#080808', border: '1px solid #1c1c1c', borderLeft: '2px solid #4ade80' },
+  scheduleRow:  { display: 'flex', alignItems: 'center', gap: '7px' },
+  scheduleIcon: { fontSize: '12px', flexShrink: 0 },
+  scheduleText: { color: '#a8e6a8', fontSize: '11px', fontWeight: '600', letterSpacing: '0.03em' },
+
   proofSection: { display: 'flex', flexDirection: 'column', gap: '8px', background: '#080808', border: '1px solid #1c1c1c', borderRadius: '2px', padding: '12px' },
   myProofSection: { display: 'flex', flexDirection: 'column', gap: '6px', background: '#080808', border: '1px solid #1a5c1a', borderRadius: '2px', padding: '10px' },
   proofLabel:   { color: '#e8e4dc', fontFamily: "'Bebas Neue', sans-serif", fontSize: '12px', letterSpacing: '0.08em' },

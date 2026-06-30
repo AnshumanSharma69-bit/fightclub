@@ -9,9 +9,11 @@ function generateMeetupCode() {
 }
 
 // ─── POST /api/challenge/send ─────────────────────────────────────────────────
+// Body: { defenderId, message?, scheduledFor?, meetingPlace? }
+// scheduledFor: ISO date string, must be in the future
 const sendChallenge = async (req, res, next) => {
   try {
-    const { defenderId, message } = req.body;
+    const { defenderId, message, scheduledFor, meetingPlace } = req.body;
     if (!defenderId) return res.status(400).json({ error: 'defenderId is required' });
 
     const challenger = await Fighter.findOne({ userId: req.user._id });
@@ -34,10 +36,33 @@ const sendChallenge = async (req, res, next) => {
     });
     if (existing) return res.status(409).json({ error: 'You already have a pending challenge with this fighter' });
 
+    // ── Validate scheduling fields ──────────────────────────────────────────
+    let parsedDate = null;
+    if (scheduledFor) {
+      parsedDate = new Date(scheduledFor);
+      if (isNaN(parsedDate.getTime())) {
+        return res.status(400).json({ error: 'Invalid date/time format' });
+      }
+      if (parsedDate.getTime() <= Date.now()) {
+        return res.status(400).json({ error: 'Scheduled time must be in the future' });
+      }
+      // Sanity cap — don't allow scheduling more than 30 days out
+      const maxFuture = Date.now() + 30 * 24 * 60 * 60 * 1000;
+      if (parsedDate.getTime() > maxFuture) {
+        return res.status(400).json({ error: 'Cannot schedule more than 30 days in advance' });
+      }
+    }
+
+    if (meetingPlace && meetingPlace.length > 150) {
+      return res.status(400).json({ error: 'Meeting place must be under 150 characters' });
+    }
+
     const challenge = await Challenge.create({
       challengerId: challenger._id,
       defenderId,
       message: message || '',
+      scheduledFor: parsedDate,
+      meetingPlace: meetingPlace || '',
     });
 
     const io = req.app.get('io');
@@ -48,6 +73,8 @@ const sendChallenge = async (req, res, next) => {
         challengerElo:    challenger.eloRating,
         challengerWeight: challenger.weightClass,
         message:          challenge.message,
+        scheduledFor:     challenge.scheduledFor,
+        meetingPlace:     challenge.meetingPlace,
       });
     }
 
@@ -126,12 +153,6 @@ const declineChallenge = async (req, res, next) => {
 };
 
 // ─── POST /api/challenge/:id/upload-proof ────────────────────────────────────
-// EITHER fighter can upload proof claiming they won.
-// Body: { image: <base64 string> }  — claimedWinnerId is always the uploader
-//
-// Two outcomes:
-// 1. First upload  → opponent gets notified, sees photo, can confirm/dispute
-// 2. Second upload (both claim victory) → automatic dispute, both photos shown
 const uploadProof = async (req, res, next) => {
   try {
     const { image } = req.body;
@@ -156,7 +177,6 @@ const uploadProof = async (req, res, next) => {
       return res.status(403).json({ error: 'You are not part of this challenge' });
     }
 
-    // Has this fighter already uploaded their own proof?
     const myExistingProof = isChallenger ? challenge.challengerProofUrl : challenge.defenderProofUrl;
     if (myExistingProof) {
       return res.status(400).json({ error: 'You already uploaded proof for this fight' });
@@ -164,7 +184,6 @@ const uploadProof = async (req, res, next) => {
 
     const proofUrl = await uploadFightProof(image, challenge._id.toString());
 
-    // Store this fighter's own proof + their claim (always claiming themselves as winner)
     if (isChallenger) {
       challenge.challengerProofUrl      = proofUrl;
       challenge.challengerReportedWinner = myId;
@@ -177,26 +196,19 @@ const uploadProof = async (req, res, next) => {
 
     const io = req.app.get('io');
     const opponentId = isChallenger ? defenderId : challengerId;
-
-    // Did the OTHER fighter already upload proof before this one?
     const opponentHasProof = isChallenger ? challenge.defenderProofUrl : challenge.challengerProofUrl;
 
     if (opponentHasProof) {
-      // Both fighters have now uploaded — compare their claims
       const cWinner = challenge.challengerReportedWinner?.toString();
       const dWinner = challenge.defenderReportedWinner?.toString();
-
       challenge.status = 'completed';
 
       if (cWinner === dWinner) {
-        // Rare but possible: both uploaded proof but agree on the same winner
-        // (e.g. loser uploads a photo conceding) — treat as confirmed
         await finalizeResult(challenge, cWinner, io, challengerId, defenderId);
         await challenge.save();
         return res.json({ message: '✅ Both fighters submitted — result confirmed and ELO updated!', disputed: false });
       }
 
-      // Both claim victory — automatic dispute, show both photos
       challenge.disputed = true;
       await challenge.save();
 
@@ -212,7 +224,6 @@ const uploadProof = async (req, res, next) => {
       });
     }
 
-    // First upload — just save and notify opponent to review
     await challenge.save();
 
     if (io) {
@@ -232,13 +243,11 @@ const uploadProof = async (req, res, next) => {
   }
 };
 
-// ─── Helper: apply ELO + badge changes once a winner is agreed ───────────────
 async function finalizeResult(challenge, agreedWinnerId, io, challengerId, defenderId) {
   const agreedLoserId = agreedWinnerId === challengerId ? defenderId : challengerId;
 
   const winner = await Fighter.findById(agreedWinnerId);
   const loser  = await Fighter.findById(agreedLoserId);
-
   if (!winner || !loser) return;
 
   const { winnerNewRating, loserNewRating } = calculateNewRatings(winner.eloRating, loser.eloRating);
@@ -267,8 +276,6 @@ async function finalizeResult(challenge, agreedWinnerId, io, challengerId, defen
 }
 
 // ─── POST /api/challenge/:id/confirm ─────────────────────────────────────────
-// Used when only ONE fighter has uploaded proof — the other reviews it.
-// Body: { agree: true/false }
 const confirmResult = async (req, res, next) => {
   try {
     const { agree } = req.body;
@@ -294,7 +301,6 @@ const confirmResult = async (req, res, next) => {
       return res.status(403).json({ error: 'You are not part of this challenge' });
     }
 
-    // Find the opponent's proof — that's what we're confirming/disputing
     const opponentProofUrl   = isChallenger ? challenge.defenderProofUrl   : challenge.challengerProofUrl;
     const opponentReportedId = isChallenger ? challenge.defenderReportedWinner : challenge.challengerReportedWinner;
 
@@ -302,7 +308,6 @@ const confirmResult = async (req, res, next) => {
       return res.status(400).json({ error: 'Your opponent has not uploaded proof yet' });
     }
 
-    // Already responded?
     const myAlreadyConfirmed = isChallenger ? challenge.challengerConfirmed : challenge.defenderConfirmed;
     if (myAlreadyConfirmed) {
       return res.status(400).json({ error: 'You already responded to this result' });
@@ -317,7 +322,6 @@ const confirmResult = async (req, res, next) => {
       challenge.disputed = true;
       challenge.status   = 'completed';
       await challenge.save();
-
       if (io) {
         io.to(challengerId).emit('challenge:completed', { challengeId: challenge._id, disputed: true });
         io.to(defenderId).emit('challenge:completed',   { challengeId: challenge._id, disputed: true });
@@ -325,16 +329,13 @@ const confirmResult = async (req, res, next) => {
       return res.json({ message: '⚠️ Result disputed — an admin will review the proof.', disputed: true });
     }
 
-    // Agreed — finalize with the opponent's claimed winner
     challenge.status = 'completed';
     await finalizeResult(challenge, opponentReportedId.toString(), io, challengerId, defenderId);
     await challenge.save();
 
     const callerIsWinner = myId === opponentReportedId.toString();
     res.json({
-      message: callerIsWinner
-        ? '✅ Result confirmed — you won!'
-        : '✅ Result confirmed — ELO updated.',
+      message: callerIsWinner ? '✅ Result confirmed — you won!' : '✅ Result confirmed — ELO updated.',
       disputed: false,
     });
   } catch (err) {
