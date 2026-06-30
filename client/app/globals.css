@@ -2,9 +2,7 @@
 @import 'leaflet/dist/leaflet.css';
 @import "tailwindcss";
 
-*, *::before, *::after {
-  box-sizing: border-box;
-}
+*, *::before, *::after { box-sizing: border-box; }
 
 html, body {
   height: 100%;
@@ -14,37 +12,46 @@ html, body {
   color: #e8e4dc;
   font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
   -webkit-font-smoothing: antialiased;
+  -webkit-text-size-adjust: 100%;
 }
 
-/* Leaflet z-index fixes */
 .leaflet-top, .leaflet-bottom { z-index: 800 !important; }
 .leaflet-pane { z-index: 400 !important; }
 
-button:focus-visible, input:focus-visible, textarea:focus-visible {
+button:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-visible {
   outline: 2px solid #cc2200;
   outline-offset: 2px;
 }
 
 * { -webkit-tap-highlight-color: transparent; }
 
-::-webkit-scrollbar { width: 6px; }
+::-webkit-scrollbar { width: 4px; }
 ::-webkit-scrollbar-track { background: #0a0a0a; }
-::-webkit-scrollbar-thumb { background: #2a2a2a; border-radius: 3px; }
-::-webkit-scrollbar-thumb:hover { background: #3a3a3a; }
+::-webkit-scrollbar-thumb { background: #2a2a2a; border-radius: 2px; }
 
 @media (max-width: 768px) {
   input, textarea, select { font-size: 16px !important; }
 }
 
-/* Responsive helpers */
 @media (max-width: 480px) {
   .stats-grid-4 { grid-template-columns: repeat(2, 1fr) !important; }
   .badge-grid   { grid-template-columns: repeat(2, 1fr) !important; }
 }
 
-/* Mobile login — stack panels */
+/* ── Auth pages mobile layout ── */
 @media (max-width: 768px) {
-  .auth-root   { flex-direction: column !important; }
-  .auth-left   { display: none !important; }
-  .auth-right  { width: 100% !important; min-height: 100vh; padding: 32px 24px !important; }
+  /* Hide left decorative panel */
+  div[style*="flex: 1"][style*="borderRight"] { display: none !important; }
+
+  /* Make right panel full width */
+  div[style*="width: 420px"] {
+    width: 100% !important;
+    padding: 48px 24px 40px !important;
+    align-items: flex-start !important;
+    min-height: 100vh;
+  }
+
+  /* Show mobile logo + steps */
+  div[style*="display: none"][style*="Bebas Neue"] { display: block !important; }
+  div[style*="display: none"][style*="mobileStep"] { display: flex !important; }
 }
