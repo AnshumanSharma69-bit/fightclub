@@ -136,8 +136,12 @@ export default function MapPage() {
           {selectedFighter && (
             <div style={{ marginTop: '16px', borderTop: '1px solid #1c1c1c', paddingTop: '16px' }}>
               <SidebarHeader title="FIGHTER" onClose={() => setSelectedFighter(null)} />
-              <FighterCard fighter={selectedFighter} isOwn={false} onChallenge={handleChallenge} />
-            </div>
+            <FighterCard
+  fighter={selectedFighter}
+  isOwn={selectedFighter._id === fighter?._id}
+  onChallenge={handleChallenge}
+  currentFighter={{ ...fighter, username: user?.username }}  // ← add this
+/> </div>
           )}
         </div>
       );
@@ -160,8 +164,10 @@ export default function MapPage() {
     return (
       <>
         <SidebarHeader title="YOUR PROFILE" />
-        <FighterCard fighter={{ ...fighter, username: user.username }} isOwn />
-        <p style={s.hint}>Tap a fighter pin to view their profile and challenge them</p>
+       <FighterCard 
+  fighter={{ ...fighter, username: user.username }} 
+  isOwn 
+/> <p style={s.hint}>Tap a fighter pin to view their profile and challenge them</p>
       </>
     );
   };

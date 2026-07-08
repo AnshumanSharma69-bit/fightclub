@@ -18,7 +18,15 @@ export default function FighterProfilePage() {
   const [showChallenge, setShowChallenge] = useState(false);
   const [copied, setCopied]     = useState(false);
   const [activeTab, setActiveTab] = useState('stats'); // 'stats' | 'history'
-
+const [showShare, setShowShare] = useState(false);
+// ... at the bottom before closing div:
+{showShare && myFighter && (
+  <ShareInviteModal
+    challenger={{ ...myFighter, username: user?.username }}
+    fighter={profile}
+    onClose={() => setShowShare(false)}
+  />
+)}
   useEffect(() => {
     Promise.all([
       api.get(`/fighter/${id}`),
@@ -223,6 +231,12 @@ export default function FighterProfilePage() {
             {profile.availableToFight ? `⚔ CHALLENGE ${profile.username.toUpperCase()}` : 'NOT AVAILABLE RIGHT NOW'}
           </button>
         )}
+        {!isOwn && user && (
+  <button style={{ ...s.challengeBtn, background: 'transparent', border: '1px solid #2a2a2a', color: '#4a4a4a', marginTop: '8px', fontSize: '13px' }}
+    onClick={() => setShowShare(true)}>
+    📤 INVITE TO FIGHT
+  </button>
+)}
 
         {!authLoading && !user && (
           <Link href="/login" style={s.loginPrompt}>
